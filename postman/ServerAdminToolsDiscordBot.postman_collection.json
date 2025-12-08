@@ -1,0 +1,52 @@
+﻿{
+  "info": {
+    "_postman_id": "00000000-0000-0000-0000-000000000001",
+    "name": "ServerAdminToolsDiscordBot",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Endpoints for the Arma Reforger Server Admin Tools webhook receiver."
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    }
+  ],
+  "item": [
+    {
+      "name": "Healthcheck",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": ["{{baseUrl}}"],
+          "path": ["health"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Send events",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"token\": \"mytoken\",\n  \"events\": [\n    {\n      \"name\": \"serveradmintools_player_killed\",\n      \"title\": \"Player Killed\",\n      \"data\": {\n        \"player\": \"not bacon\",\n        \"instigator\": \"not bacon\",\n        \"friendly\": 0\n      },\n      \"timestamp\": 1693589140\n    },\n    {\n      \"name\": \"serveradmintools_player_joined\",\n      \"title\": \"Player Joined\",\n      \"data\": {\n        \"player\": \"not bacon\",\n        \"identity\": \"dbf72344-3b61-4846-b3d8-9ed793ea254f\",\n        \"playerId\": 1\n      },\n      \"timestamp\": 1693589133\n    },\n    {\n      \"name\": \"serveradmintools_game_started\",\n      \"title\": \"Game Started\",\n      \"data\": {},\n      \"timestamp\": 1693589200\n    },\n    {\n      \"name\": \"serveradmintools_game_ended\",\n      \"title\": \"Game Ended\",\n      \"data\": {\n        \"reason\": \"player_victory\",\n        \"winner\": \"not bacon\"\n      },\n      \"timestamp\": 1693589300\n    },\n    {\n      \"name\": \"serveradmintools_vote_started\",\n      \"title\": \"Vote Started\",\n      \"data\": {\n        \"type\": \"kick\",\n        \"initiator\": \"not bacon\",\n        \"target\": \"other player\"\n      },\n      \"timestamp\": 1693589310\n    },\n    {\n      \"name\": \"serveradmintools_vote_ended\",\n      \"title\": \"Vote Ended\",\n      \"data\": {\n        \"type\": \"kick\",\n        \"winner\": \"not bacon\",\n        \"target\": \"other player\"\n      },\n      \"timestamp\": 1693589320\n    },\n    {\n      \"name\": \"serveradmintools_server_fps_low\",\n      \"title\": \"Server FPS Low\",\n      \"data\": {\n        \"fps\": 18.5,\n        \"players\": 24,\n        \"ai_characters\": 12\n      },\n      \"timestamp\": 1693589330\n    },\n    {\n      \"name\": \"serveradmintools_admin_action\",\n      \"title\": \"Admin Action\",\n      \"data\": {\n        \"player\": \"other player\",\n        \"admin\": \"admin1\",\n        \"action\": \"kick_player\"\n      },\n      \"timestamp\": 1693589340\n    },\n    {\n      \"name\": \"serveradmintools_conflict_base_captured\",\n      \"title\": \"Base Captured\",\n      \"data\": {\n        \"faction\": \"US\",\n        \"base\": \"FOB Alpha\"\n      },\n      \"timestamp\": 1693589350\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/events",
+          "host": ["{{baseUrl}}"],
+          "path": ["events"]
+        },
+        "description": "Send a batch of Server Admin Tools events. Response includes counts: received, recognized, handled."
+      },
+      "response": []
+    }
+  ]
+}

@@ -136,11 +136,19 @@ async function handleSetDefaultChannel(
     return;
   }
 
-  setDefaultChannel(guildId, channel.id);
-  await interaction.reply({
-    content: `Default channel set to <#${channel.id}>`,
-    ephemeral: true,
-  });
+  try {
+    await setDefaultChannel(guildId, channel.id);
+    await interaction.reply({
+      content: `Default channel set to <#${channel.id}>`,
+      ephemeral: true,
+    });
+  } catch (err) {
+    console.error("[discord] Failed to set default channel", err);
+    await interaction.reply({
+      content: "Failed to save the default channel. Please try again.",
+      ephemeral: true,
+    });
+  }
 }
 
 async function handleSetEventChannel(
@@ -174,11 +182,19 @@ async function handleSetEventChannel(
     return;
   }
 
-  setEventChannel(guildId, event, channel.id);
-  await interaction.reply({
-    content: `Channel for **${event}** set to <#${channel.id}>`,
-    ephemeral: true,
-  });
+  try {
+    await setEventChannel(guildId, event, channel.id);
+    await interaction.reply({
+      content: `Channel for **${event}** set to <#${channel.id}>`,
+      ephemeral: true,
+    });
+  } catch (err) {
+    console.error(`[discord] Failed to set channel for event ${event}`, err);
+    await interaction.reply({
+      content: "Failed to save the event channel. Please try again.",
+      ephemeral: true,
+    });
+  }
 }
 
 async function handleSetupEventChannels(
@@ -215,6 +231,7 @@ async function handleSetupEventChannels(
     });
 
     const created: string[] = [];
+    const failedToPersist: string[] = [];
     for (const event of SERVER_EVENT_NAMES) {
       const channelName = `sat-${event.replace("serveradmintools_", "").replace(/_/g, "-")}`;
       const channel = await guild.channels.create({
@@ -223,21 +240,36 @@ async function handleSetupEventChannels(
         parent: category.id,
         reason: `Channel for ${event}`,
       });
-      setEventChannel(guild.id, event, channel.id);
-      created.push(`<#${channel.id}> ↔ ${event}`);
+      try {
+        await setEventChannel(guild.id, event, channel.id);
+        created.push(`<#${channel.id}> ↔ ${event}`);
+      } catch (err) {
+        console.error(`[discord] Failed to persist channel mapping for ${event}`, err);
+        failedToPersist.push(event);
+      }
     }
 
     // set default to first created channel
     const first = created.length ? created[0] : null;
     if (first) {
       const firstId = /\<\#(\d+)\>/.exec(first)?.[1];
-      if (firstId) setDefaultChannel(guild.id, firstId);
+      if (firstId) {
+        try {
+          await setDefaultChannel(guild.id, firstId);
+        } catch (err) {
+          console.error("[discord] Failed to set default channel during setup", err);
+        }
+      }
     }
 
-    const summary = created.join("\n");
-    await interaction.editReply({
-      content: `Created category **${category.name}** and mapped channels:\n${summary}`,
-    });
+    const details = [`Created category **${category.name}** and mapped channels:`];
+    if (created.length) {
+      details.push(created.join("\n"));
+    }
+    if (failedToPersist.length) {
+      details.push(`Failed to save mappings for: ${failedToPersist.join(", ")}`);
+    }
+    await interaction.editReply({ content: details.join("\n") });
   } catch (error) {
     console.error("[discord] setup_event_channels failed", error);
     await interaction.editReply({
@@ -280,12 +312,20 @@ async function handleGenerateApiToken(interaction: ChatInputCommandInteraction):
   }
 
   const token = crypto.randomBytes(32).toString("hex");
-  setApiToken(interaction.guild.id, token);
 
-  await interaction.reply({
-    content: `New API token (store it safely):\n\`${token}\`\nThis replaces any previous token.`,
-    ephemeral: true,
-  });
+  try {
+    await setApiToken(interaction.guild.id, token);
+    await interaction.reply({
+      content: `New API token (store it safely):\n\`${token}\`\nThis replaces any previous token.`,
+      ephemeral: true,
+    });
+  } catch (err) {
+    console.error("[discord] Failed to set API token", err);
+    await interaction.reply({
+      content: "Failed to generate and store the API token. Please try again.",
+      ephemeral: true,
+    });
+  }
 }
 
 async function handleCleanupChannels(

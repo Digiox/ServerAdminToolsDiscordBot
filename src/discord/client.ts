@@ -48,14 +48,22 @@ export async function startDiscord(): Promise<Client> {
     }
   });
 
-  client.on("guildCreate", (guild) => {
-    upsertGuild(guild.id);
+  client.on("guildCreate", async (guild) => {
+    try {
+      await upsertGuild(guild.id);
+    } catch (err) {
+      console.error(`[discord] Failed to upsert guild ${guild.id} on join`, err);
+    }
     console.log(`[discord] Joined guild ${guild.name} (${guild.id})`);
   });
 
-  client.on("guildDelete", (guild) => {
+  client.on("guildDelete", async (guild) => {
     if (guild.id) {
-      removeGuild(guild.id);
+      try {
+        await removeGuild(guild.id);
+      } catch (err) {
+        console.error(`[discord] Failed to remove guild ${guild.id} on delete`, err);
+      }
       console.log(`[discord] Removed from guild ${guild.id}`);
     }
   });

@@ -3,92 +3,87 @@ import { ServerEventName } from "../types/events";
 
 const db = getDb();
 
-export function upsertGuild(guildId: string): void {
-  const stmt = db.prepare(
-    "INSERT OR IGNORE INTO guilds (guild_id) VALUES (@guildId)"
-  );
-  stmt.run({ guildId });
+export async function upsertGuild(guildId: string): Promise<void> {
+  await db.query("INSERT IGNORE INTO guilds (guild_id) VALUES (?)", [guildId]);
 }
 
-export function removeGuild(guildId: string): void {
-  db.prepare("DELETE FROM guilds WHERE guild_id=@guildId").run({ guildId });
+export async function removeGuild(guildId: string): Promise<void> {
+  await db.query("DELETE FROM guilds WHERE guild_id = ?", [guildId]);
 }
 
-export function setDefaultChannel(guildId: string, channelId: string): void {
-  upsertGuild(guildId);
-  const stmt = db.prepare(
-    "UPDATE guilds SET default_channel_id=@channelId WHERE guild_id=@guildId"
-  );
-  stmt.run({ guildId, channelId });
+export async function setDefaultChannel(guildId: string, channelId: string): Promise<void> {
+  await upsertGuild(guildId);
+  await db.query("UPDATE guilds SET default_channel_id = ? WHERE guild_id = ?", [channelId, guildId]);
 }
 
-export function getDefaultChannel(guildId: string): string | null {
-  const row = db
-    .prepare("SELECT default_channel_id AS id FROM guilds WHERE guild_id=@guildId")
-    .get({ guildId }) as { id?: string } | undefined;
+export async function getDefaultChannel(guildId: string): Promise<string | null> {
+  const [rows] = await db.query("SELECT default_channel_id AS id FROM guilds WHERE guild_id = ?", [
+    guildId,
+  ]);
+  const row = (rows as any[])[0];
   return row?.id ?? null;
 }
 
-export function setEventChannel(
+export async function setEventChannel(
   guildId: string,
   event: ServerEventName,
   channelId: string
-): void {
-  upsertGuild(guildId);
-  db.prepare(
+): Promise<void> {
+  await upsertGuild(guildId);
+  await db.query(
     `INSERT INTO event_channels (guild_id, event_name, channel_id)
-     VALUES (@guildId, @event, @channelId)
-     ON CONFLICT(guild_id, event_name) DO UPDATE SET channel_id=excluded.channel_id`
-  ).run({ guildId, event, channelId });
+     VALUES (?, ?, ?)
+     ON DUPLICATE KEY UPDATE channel_id = VALUES(channel_id)`,
+    [guildId, event, channelId]
+  );
 }
 
-export function getEventChannel(
+export async function getEventChannel(
   guildId: string,
   event: ServerEventName
-): string | null {
-  const row = db
-    .prepare(
-      "SELECT channel_id AS id FROM event_channels WHERE guild_id=@guildId AND event_name=@event"
-    )
-    .get({ guildId, event }) as { id?: string } | undefined;
+): Promise<string | null> {
+  const [rows] = await db.query(
+    "SELECT channel_id AS id FROM event_channels WHERE guild_id = ? AND event_name = ?",
+    [guildId, event]
+  );
+  const row = (rows as any[])[0];
   return row?.id ?? null;
 }
 
-export function getConfigSnapshot(guildId: string): {
+export async function getConfigSnapshot(guildId: string): Promise<{
   defaultChannelId: string | null;
   eventChannelMap: Record<string, string>;
-} {
-  const defaultChannelId = getDefaultChannel(guildId);
-  const rows = db
-    .prepare(
-      "SELECT event_name, channel_id FROM event_channels WHERE guild_id=@guildId"
-    )
-    .all({ guildId }) as { event_name: string; channel_id: string }[];
+}> {
+  const defaultChannelId = await getDefaultChannel(guildId);
+  const [rows] = await db.query(
+    "SELECT event_name, channel_id FROM event_channels WHERE guild_id = ?",
+    [guildId]
+  );
   const eventChannelMap: Record<string, string> = {};
-  rows.forEach((r) => (eventChannelMap[r.event_name] = r.channel_id));
+  (rows as any[]).forEach((r) => (eventChannelMap[r.event_name] = r.channel_id));
   return { defaultChannelId, eventChannelMap };
 }
 
-export function listGuildIds(): string[] {
-  const rows = db.prepare("SELECT guild_id FROM guilds").all() as { guild_id: string }[];
-  return rows.map((r) => r.guild_id);
+export async function listGuildIds(): Promise<string[]> {
+  const [rows] = await db.query("SELECT guild_id FROM guilds");
+  return (rows as any[]).map((r) => r.guild_id);
 }
 
-export function setApiToken(guildId: string, token: string): void {
-  upsertGuild(guildId);
-  db.prepare("UPDATE guilds SET api_token=@token WHERE guild_id=@guildId").run({ guildId, token });
+export async function setApiToken(guildId: string, token: string): Promise<void> {
+  await upsertGuild(guildId);
+  await db.query("UPDATE guilds SET api_token = ? WHERE guild_id = ?", [token, guildId]);
 }
 
-export function getApiToken(guildId: string): string | null {
-  const row = db
-    .prepare("SELECT api_token AS token FROM guilds WHERE guild_id=@guildId")
-    .get({ guildId }) as { token?: string } | undefined;
+export async function getApiToken(guildId: string): Promise<string | null> {
+  const [rows] = await db.query("SELECT api_token AS token FROM guilds WHERE guild_id = ?", [
+    guildId,
+  ]);
+  const row = (rows as any[])[0];
   return row?.token ?? null;
 }
 
-export function findGuildIdByToken(token: string): string | null {
-  const row = db
-    .prepare("SELECT guild_id FROM guilds WHERE api_token=@token")
-    .get({ token }) as { guild_id?: string } | undefined;
+export async function findGuildIdByToken(token: string): Promise<string | null> {
+  const [rows] = await db.query("SELECT guild_id FROM guilds WHERE api_token = ?", [token]);
+  const row = (rows as any[])[0];
   return row?.guild_id ?? null;
 }

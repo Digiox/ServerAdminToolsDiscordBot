@@ -32,15 +32,18 @@ router.get("/logout", (req, res, next) => {
   });
 });
 
-router.get("/api/guilds", (req: Request, res: Response) => {
+router.get("/api/guilds", async (req: Request, res: Response) => {
   const isAuthed = (req as any).isAuthenticated && (req as any).isAuthenticated();
   if (!isAuthed) {
     return res.status(401).json({ error: "unauthorized" });
   }
-  const guilds = listGuildIds().map((id) => {
-    const config = getConfigSnapshot(id);
-    return { id, ...config };
-  });
+  const ids = await listGuildIds();
+  const guilds = await Promise.all(
+    ids.map(async (id) => {
+      const config = await getConfigSnapshot(id);
+      return { id, ...config };
+    })
+  );
   const user = (req as any).user?.profile;
   res.json({ guilds, user });
 });

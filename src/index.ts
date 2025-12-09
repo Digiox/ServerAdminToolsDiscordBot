@@ -3,7 +3,7 @@ import { EventBatchBody, SERVER_EVENT_NAMES, ServerEvent, ServerEventName } from
 import { dispatchEvent } from "./handlers/dispatcher";
 import { ENV } from "./config/env";
 import { startDiscord } from "./discord/client";
-import { initMigrations } from "./db/client";
+import { getDb, initMigrations } from "./db/client";
 import { findGuildIdByToken } from "./db/channelStore";
 import session from "express-session";
 import passport from "passport";
@@ -14,10 +14,6 @@ import path from "path";
 const app = express();
 const PORT = ENV.PORT;
 const KNOWN_EVENT_NAMES = new Set<ServerEventName>(SERVER_EVENT_NAMES);
-
-// Initialize database schema
-initMigrations();
-configurePassport();
 
 // Accept JSON even if Arma sends application/x-www-form-urlencoded with a JSON body.
 app.use(
@@ -69,7 +65,7 @@ app.post("/events", async (req: Request, res: Response) => {
     return;
   }
 
-  const guildId = findGuildIdByToken(token);
+  const guildId = await findGuildIdByToken(token);
   if (!guildId) {
     res.status(401).json({ error: "Invalid token" });
     return;
@@ -157,11 +153,30 @@ function logUnknownEvent(event: unknown): void {
   console.warn(`[event:unknown] payload=${JSON.stringify(event)}`);
 }
 
-app.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
-});
+async function start(): Promise<void> {
+  try {
+    await initMigrations();
+    const db = getDb();
+    await db.query("SELECT 1");
+    console.log("[startup][db] MySQL connection OK");
+  } catch (err) {
+    console.error("[startup][db] Connection failed:", err);
+    process.exit(1);
+  }
 
-// Start Discord client (non-blocking startup). If env vars missing, log warning.
-startDiscord().catch((err) => {
-  console.warn("[startup] Discord client not started:", err instanceof Error ? err.message : err);
+  configurePassport();
+
+  app.listen(PORT, () => {
+    console.log(`Server listening on port ${PORT}`);
+  });
+
+  // Start Discord client (non-blocking startup). If env vars missing, log warning.
+  startDiscord().catch((err) => {
+    console.warn("[startup] Discord client not started:", err instanceof Error ? err.message : err);
+  });
+}
+
+start().catch((err) => {
+  console.error("[startup] Fatal error:", err);
+  process.exit(1);
 });

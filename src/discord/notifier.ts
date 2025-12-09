@@ -15,7 +15,9 @@ export async function sendEventMessage(
   }
 
   const channelId =
-    getEventChannel(guildId, eventName as any) || getDefaultChannel(guildId) || null;
+    (await getEventChannel(guildId, eventName as any)) ||
+    (await getDefaultChannel(guildId)) ||
+    null;
   if (!channelId) {
     console.warn(`[notify] No channel mapped for event ${eventName} in guild ${guildId}`);
     return;

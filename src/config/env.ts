@@ -14,6 +14,9 @@ export const ENV = {
   PORT: Number(process.env.PORT) || 3000,
   DISCORD_APP_ID: process.env.DISCORD_APP_ID ?? "",
   DISCORD_TOKEN: process.env.DISCORD_TOKEN ?? "",
+  DISCORD_CLIENT_SECRET: process.env.DISCORD_CLIENT_SECRET ?? "",
   DISCORD_PRIMARY_GUILD_ID: process.env.DISCORD_PRIMARY_GUILD_ID ?? "",
   DB_PATH: process.env.DB_PATH,
+  SESSION_SECRET: process.env.SESSION_SECRET ?? "",
+  OAUTH_CALLBACK_URL: process.env.OAUTH_CALLBACK_URL ?? "",
 };

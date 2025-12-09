@@ -5,6 +5,11 @@ import { ENV } from "./config/env";
 import { startDiscord } from "./discord/client";
 import { initMigrations } from "./db/client";
 import { findGuildIdByToken } from "./db/channelStore";
+import session from "express-session";
+import passport from "passport";
+import { configurePassport } from "./web/auth";
+import webRoutes from "./web/routes";
+import path from "path";
 
 const app = express();
 const PORT = ENV.PORT;
@@ -12,6 +17,7 @@ const KNOWN_EVENT_NAMES = new Set<ServerEventName>(SERVER_EVENT_NAMES);
 
 // Initialize database schema
 initMigrations();
+configurePassport();
 
 // Accept JSON even if Arma sends application/x-www-form-urlencoded with a JSON body.
 app.use(
@@ -27,6 +33,28 @@ app.use(
     limit: "1mb",
   })
 );
+
+// Sessions for web auth
+app.use(
+  session({
+    secret: ENV.SESSION_SECRET || "change-me",
+    resave: false,
+    saveUninitialized: false,
+  })
+);
+app.use(passport.initialize());
+app.use(passport.session());
+
+// Web UI routes (Discord OAuth)
+app.use(webRoutes);
+
+// Serve React build if present
+const frontendDist = path.join(process.cwd(), "frontend", "dist");
+app.use(express.static(frontendDist));
+// Catch-all for /web and nested paths to serve React build
+app.get(/^\/web(?:\/.*)?$/, (_req, res) => {
+  res.sendFile(path.join(frontendDist, "index.html"));
+});
 
 app.post("/events", async (req: Request, res: Response) => {
   const parsedBody = normalizeBody(req.body);

@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc -p tsconfig.json",
-    "build:frontend": "cd frontend && npm ci --omit=dev && npm run build",
+    "build:frontend": "cd frontend && npm ci && npm run build",
     "build:all": "npm run build:frontend && npm run build",
     "start": "node dist/index.js",
     "test": "echo \"No tests yet\""

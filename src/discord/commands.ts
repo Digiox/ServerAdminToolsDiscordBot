@@ -11,6 +11,7 @@ import {
 import { ENV, requireEnv } from "../config/env";
 import { SERVER_EVENT_NAMES, ServerEventName } from "../types/events";
 import { setDefaultChannel, setEventChannel, setApiToken } from "../db/channelStore";
+import { TextChannel, NewsChannel, ThreadChannel } from "discord.js";
 import crypto from "crypto";
 
 const setDefaultChannelCommand = new SlashCommandBuilder()
@@ -52,11 +53,26 @@ const generateApiTokenCommand = new SlashCommandBuilder()
   .setDescription("Generate a new API token for webhooks (guild owner only)")
   .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator);
 
+const cleanupChannelsCommand = new SlashCommandBuilder()
+  .setName("cleanup_channels")
+  .setDescription("Delete all text channels whose name starts with a prefix")
+  .addStringOption((option) =>
+    option.setName("prefix").setDescription("Prefix (e.g. sat)").setRequired(true)
+  )
+  .addBooleanOption((option) =>
+    option
+      .setName("dryrun")
+      .setDescription("Only list matches without deleting (default false)")
+      .setRequired(false)
+  )
+  .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageChannels);
+
 export const commandData = [
   setDefaultChannelCommand,
   setEventChannelCommand,
   setupEventChannelsCommand,
   generateApiTokenCommand,
+  cleanupChannelsCommand,
 ];
 
 export async function registerApplicationCommands(): Promise<void> {
@@ -86,6 +102,9 @@ export async function handleInteraction(
       break;
     case "generate_api_token":
       await handleGenerateApiToken(interaction);
+      break;
+    case "cleanup_channels":
+      await handleCleanupChannels(interaction);
       break;
     default:
       await interaction.reply({ content: "Unknown command", ephemeral: true });
@@ -117,11 +136,19 @@ async function handleSetDefaultChannel(
     return;
   }
 
-  setDefaultChannel(guildId, channel.id);
-  await interaction.reply({
-    content: `Default channel set to <#${channel.id}>`,
-    ephemeral: true,
-  });
+  try {
+    await setDefaultChannel(guildId, channel.id);
+    await interaction.reply({
+      content: `Default channel set to <#${channel.id}>`,
+      ephemeral: true,
+    });
+  } catch (err) {
+    console.error("[discord] Failed to set default channel", err);
+    await interaction.reply({
+      content: "Failed to save the default channel. Please try again.",
+      ephemeral: true,
+    });
+  }
 }
 
 async function handleSetEventChannel(
@@ -155,11 +182,19 @@ async function handleSetEventChannel(
     return;
   }
 
-  setEventChannel(guildId, event, channel.id);
-  await interaction.reply({
-    content: `Channel for **${event}** set to <#${channel.id}>`,
-    ephemeral: true,
-  });
+  try {
+    await setEventChannel(guildId, event, channel.id);
+    await interaction.reply({
+      content: `Channel for **${event}** set to <#${channel.id}>`,
+      ephemeral: true,
+    });
+  } catch (err) {
+    console.error(`[discord] Failed to set channel for event ${event}`, err);
+    await interaction.reply({
+      content: "Failed to save the event channel. Please try again.",
+      ephemeral: true,
+    });
+  }
 }
 
 async function handleSetupEventChannels(
@@ -196,6 +231,7 @@ async function handleSetupEventChannels(
     });
 
     const created: string[] = [];
+    const failedToPersist: string[] = [];
     for (const event of SERVER_EVENT_NAMES) {
       const channelName = `sat-${event.replace("serveradmintools_", "").replace(/_/g, "-")}`;
       const channel = await guild.channels.create({
@@ -204,21 +240,36 @@ async function handleSetupEventChannels(
         parent: category.id,
         reason: `Channel for ${event}`,
       });
-      setEventChannel(guild.id, event, channel.id);
-      created.push(`<#${channel.id}> ↔ ${event}`);
+      try {
+        await setEventChannel(guild.id, event, channel.id);
+        created.push(`<#${channel.id}> ↔ ${event}`);
+      } catch (err) {
+        console.error(`[discord] Failed to persist channel mapping for ${event}`, err);
+        failedToPersist.push(event);
+      }
     }
 
     // set default to first created channel
     const first = created.length ? created[0] : null;
     if (first) {
       const firstId = /\<\#(\d+)\>/.exec(first)?.[1];
-      if (firstId) setDefaultChannel(guild.id, firstId);
+      if (firstId) {
+        try {
+          await setDefaultChannel(guild.id, firstId);
+        } catch (err) {
+          console.error("[discord] Failed to set default channel during setup", err);
+        }
+      }
     }
 
-    const summary = created.join("\n");
-    await interaction.editReply({
-      content: `Created category **${category.name}** and mapped channels:\n${summary}`,
-    });
+    const details = [`Created category **${category.name}** and mapped channels:`];
+    if (created.length) {
+      details.push(created.join("\n"));
+    }
+    if (failedToPersist.length) {
+      details.push(`Failed to save mappings for: ${failedToPersist.join(", ")}`);
+    }
+    await interaction.editReply({ content: details.join("\n") });
   } catch (error) {
     console.error("[discord] setup_event_channels failed", error);
     await interaction.editReply({
@@ -261,10 +312,100 @@ async function handleGenerateApiToken(interaction: ChatInputCommandInteraction):
   }
 
   const token = crypto.randomBytes(32).toString("hex");
-  setApiToken(interaction.guild.id, token);
 
-  await interaction.reply({
-    content: `New API token (store it safely):\n\`${token}\`\nThis replaces any previous token.`,
-    ephemeral: true,
+  try {
+    await setApiToken(interaction.guild.id, token);
+    await interaction.reply({
+      content: `New API token (store it safely):\n\`${token}\`\nThis replaces any previous token.`,
+      ephemeral: true,
+    });
+  } catch (err) {
+    console.error("[discord] Failed to set API token", err);
+    await interaction.reply({
+      content: "Failed to generate and store the API token. Please try again.",
+      ephemeral: true,
+    });
+  }
+}
+
+async function handleCleanupChannels(
+  interaction: ChatInputCommandInteraction
+): Promise<void> {
+  if (!interaction.guild) {
+    await interaction.reply({ content: "Use this in a server.", ephemeral: true });
+    return;
+  }
+
+  const prefix = interaction.options.getString("prefix", true).toLowerCase();
+  const dryrun = interaction.options.getBoolean("dryrun") ?? false;
+
+  const me = interaction.guild.members.me;
+  if (!me) {
+    await interaction.reply({ content: "Bot member not found in this guild.", ephemeral: true });
+    return;
+  }
+
+  const missing = getMissingPerms(me, [PermissionsBitField.Flags.ManageChannels]);
+  if (missing.length) {
+    await interaction.reply({
+      content: `I need Manage Channels to delete channels. Missing: ${missing.join(", ")}`,
+      ephemeral: true,
+    });
+    return;
+  }
+
+  await interaction.deferReply({ ephemeral: true });
+
+  const channels = await interaction.guild.channels.fetch();
+  const matches: Array<TextChannel | NewsChannel | ThreadChannel> = [];
+  const cannotAccess: string[] = [];
+  const failed: string[] = [];
+
+  channels.forEach((ch) => {
+    if (!ch) return;
+    if (!ch.isTextBased()) return;
+    if ("name" in ch && typeof ch.name === "string") {
+      if (ch.name.toLowerCase().startsWith(prefix)) {
+        const perms = ch.permissionsFor(me);
+        const missingCh = perms?.missing([PermissionsBitField.Flags.ManageChannels]) ?? [];
+        if (missingCh.length) {
+          cannotAccess.push(`#${ch.name} (missing: ${missingCh.join(",")})`);
+          return;
+        }
+        matches.push(ch as TextChannel | NewsChannel | ThreadChannel);
+      }
+    }
+  });
+
+  if (!matches.length && !cannotAccess.length) {
+    await interaction.editReply({ content: `No channels found with prefix "${prefix}".` });
+    return;
+  }
+
+  if (dryrun) {
+    const list = matches.map((c) => `#${c.name}`).join(", ");
+    await interaction.editReply({
+      content: `Dry run: found ${matches.length} channel(s): ${list}${
+        cannotAccess.length ? `\nCannot access (${cannotAccess.length}): ${cannotAccess.join(", ")}` : ""
+      }`,
+    });
+    return;
+  }
+
+  for (const ch of matches) {
+    try {
+      await ch.delete(`cleanup_channels prefix=${prefix} by ${interaction.user.tag}`);
+    } catch (err) {
+      console.error("[cleanup_channels] Failed to delete", ch.id, err);
+      const channelId = (ch as any).id ?? "unknown";
+      const channelName = (ch as any).name ?? channelId;
+      failed.push(`#${channelName}`);
+    }
+  }
+
+  await interaction.editReply({
+    content: `Deleted ${matches.length - failed.length} channel(s) with prefix "${prefix}".${
+      cannotAccess.length ? `\nSkipped (no access) ${cannotAccess.length}: ${cannotAccess.join(", ")}` : ""
+    }${failed.length ? `\nFailed ${failed.length}: ${failed.join(", ")}` : ""}`,
   });
 }

@@ -70,6 +70,14 @@ router.post("/web/guild/:id/server", ensureAuthenticated, async (req: Request, r
     await linkServerToGuild(server.id, guildId);
     res.redirect("/web");
   } catch (err) {
+    if ((err as Error).message === "TOKEN_REQUIRED") {
+      res.status(400).send("Existing server label: token required to link.");
+      return;
+    }
+    if ((err as Error).message === "TOKEN_INVALID") {
+      res.status(400).send("Invalid token for this server label.");
+      return;
+    }
     console.error(`[web] Failed to upsert server ${label}`, err);
     res.status(500).send("Failed to update server. Please try again.");
   }
@@ -135,4 +143,3 @@ router.post(
 );
 
 export default router;
-

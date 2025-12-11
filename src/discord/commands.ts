@@ -84,6 +84,9 @@ const regenerateServerTokenCommand = new SlashCommandBuilder()
   .addStringOption((option) =>
     option.setName("label").setDescription("Server label").setRequired(true)
   )
+  .addStringOption((option) =>
+    option.setName("token").setDescription("Current token (required)").setRequired(true)
+  )
   .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator);
 
 const cleanupChannelsCommand = new SlashCommandBuilder()
@@ -163,10 +166,27 @@ async function handleRegisterServer(
     const server = await createOrUpdateServer(label, providedToken);
     await linkServerToGuild(server.id, interaction.guild.id);
     await interaction.reply({
-      content: `Server **${label}** linked to this guild.\nToken: \`${server.token}\``,
+      content:
+        server.token && !providedToken
+          ? `Server **${label}** created and linked to this guild.\nToken: \`${server.token}\``
+          : `Server **${label}** linked to this guild.`,
       ephemeral: true,
     });
   } catch (err) {
+    if ((err as Error).message === "TOKEN_REQUIRED") {
+      await interaction.reply({
+        content: `Server label "${label}" already exists. Please provide its current token to link it.`,
+        ephemeral: true,
+      });
+      return;
+    }
+    if ((err as Error).message === "TOKEN_INVALID") {
+      await interaction.reply({
+        content: `Invalid token for server label "${label}".`,
+        ephemeral: true,
+      });
+      return;
+    }
     console.error("[discord] Failed to register server", err);
     await interaction.reply({
       content: "Failed to register the server. Is the label unique?",
@@ -409,6 +429,7 @@ async function handleRegenerateServerToken(
   }
 
   const label = interaction.options.getString("label", true);
+  const currentToken = interaction.options.getString("token", true);
 
   try {
     const server = await getServerByLabel(label);
@@ -419,12 +440,19 @@ async function handleRegenerateServerToken(
       });
       return;
     }
-    const updated = await regenerateServerToken(label);
+    const updated = await regenerateServerToken(label, currentToken);
     await interaction.reply({
       content: `New API token for **${label}** (store it safely):\n\`${updated.token}\`\nThis replaces any previous token.`,
       ephemeral: true,
     });
   } catch (err) {
+    if ((err as Error).message === "TOKEN_INVALID") {
+      await interaction.reply({
+        content: "Current token invalid. Cannot regenerate.",
+        ephemeral: true,
+      });
+      return;
+    }
     console.error("[discord] Failed to set API token", err);
     await interaction.reply({
       content: "Failed to generate and store the API token. Please try again.",

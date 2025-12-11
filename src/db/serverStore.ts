@@ -29,11 +29,9 @@ export async function getServerByToken(token: string): Promise<ServerRecord | nu
 export async function createOrUpdateServer(label: string, token?: string): Promise<ServerRecord> {
   const existing = await getServerByLabel(label);
   if (existing) {
-    if (token && token !== existing.token) {
-      await db.query("UPDATE servers SET token = ? WHERE id = ?", [token, existing.id]);
-      return { ...existing, token };
-    }
-    return existing;
+    if (!token) throw new Error("TOKEN_REQUIRED");
+    if (token !== existing.token) throw new Error("TOKEN_INVALID");
+    return existing; // never overwrite token here
   }
 
   const newToken = token ?? crypto.randomBytes(32).toString("hex");
@@ -45,10 +43,13 @@ export async function createOrUpdateServer(label: string, token?: string): Promi
   return { id: insertId, label, token: newToken };
 }
 
-export async function regenerateServerToken(label: string): Promise<ServerRecord> {
+export async function regenerateServerToken(label: string, currentToken: string): Promise<ServerRecord> {
   const server = await getServerByLabel(label);
   if (!server) {
     throw new Error("Server not found");
+  }
+  if (server.token !== currentToken) {
+    throw new Error("TOKEN_INVALID");
   }
   const token = crypto.randomBytes(32).toString("hex");
   await db.query("UPDATE servers SET token = ? WHERE id = ?", [token, server.id]);
@@ -190,4 +191,3 @@ export async function getServerConfigSnapshot(
     eventChannelMap,
   };
 }
-

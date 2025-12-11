@@ -44,18 +44,18 @@ const setDefaultChannelCommand = new SlashCommandBuilder()
   .addStringOption((option) =>
     option.setName("label").setDescription("Server label").setRequired(true)
   )
-  .addStringOption((option) =>
-    option
-      .setName("token")
-      .setDescription("Server token (required if this guild is not linked yet)")
-      .setRequired(false)
-  )
   .addChannelOption((option) =>
     option
       .setName("channel")
       .setDescription("Text channel to use by default")
       .addChannelTypes(ChannelType.GuildText)
       .setRequired(true)
+  )
+  .addStringOption((option) =>
+    option
+      .setName("token")
+      .setDescription("Server token (required if this guild is not linked yet)")
+      .setRequired(false)
   )
   .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageGuild);
 
@@ -64,12 +64,6 @@ const setEventChannelCommand = new SlashCommandBuilder()
   .setDescription("Map a specific event to a channel for a server label")
   .addStringOption((option) =>
     option.setName("label").setDescription("Server label").setRequired(true)
-  )
-  .addStringOption((option) =>
-    option
-      .setName("token")
-      .setDescription("Server token (required if this guild is not linked yet)")
-      .setRequired(false)
   )
   .addStringOption((option) => {
     option.setName("event").setDescription("Event name").setRequired(true);
@@ -82,6 +76,12 @@ const setEventChannelCommand = new SlashCommandBuilder()
       .setDescription("Text channel for this event")
       .addChannelTypes(ChannelType.GuildText)
       .setRequired(true)
+  )
+  .addStringOption((option) =>
+    option
+      .setName("token")
+      .setDescription("Server token (required if this guild is not linked yet)")
+      .setRequired(false)
   )
   .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageGuild);
 

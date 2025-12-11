@@ -11,6 +11,7 @@ import {
 } from "../db/serverStore";
 import { listGuildIds } from "../db/channelStore";
 import { SERVER_EVENT_NAMES } from "../types/events";
+import { ensureGuildAuthorized } from "./authz";
 
 const router = Router();
 
@@ -57,7 +58,7 @@ router.get("/api/guilds", async (req: Request, res: Response) => {
 });
 
 // Create/link server from web (label + optional token)
-router.post("/web/guild/:id/server", ensureAuthenticated, async (req: Request, res: Response) => {
+router.post("/web/guild/:id/server", ensureGuildAuthorized, async (req: Request, res: Response) => {
   const guildId = req.params.id as string;
   const label = (req.body.label as string)?.trim();
   const token = (req.body.token as string)?.trim() || undefined;
@@ -85,7 +86,7 @@ router.post("/web/guild/:id/server", ensureAuthenticated, async (req: Request, r
 
 router.post(
   "/web/guild/:id/default-channel",
-  ensureAuthenticated,
+  ensureGuildAuthorized,
   async (req: Request, res: Response) => {
     const guildId = req.params.id as string;
     const label = (req.body.label as string)?.trim();
@@ -112,7 +113,7 @@ router.post(
 
 router.post(
   "/web/guild/:id/event-channel",
-  ensureAuthenticated,
+  ensureGuildAuthorized,
   async (req: Request, res: Response) => {
     const guildId = req.params.id as string;
     const label = (req.body.label as string)?.trim();

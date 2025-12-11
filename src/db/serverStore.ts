@@ -173,6 +173,14 @@ export async function listServersForGuild(
   return (rows as any[]).map((r) => ({ id: r.id, label: r.label, token: r.token }));
 }
 
+export async function isGuildLinkedToServer(serverId: number, guildId: string): Promise<boolean> {
+  const [rows] = await db.query(
+    `SELECT 1 FROM server_guilds WHERE server_id = ? AND guild_id = ? LIMIT 1`,
+    [serverId, guildId]
+  );
+  return (rows as any[]).length > 0;
+}
+
 export async function getServerConfigSnapshot(
   serverId: number,
   guildId: string

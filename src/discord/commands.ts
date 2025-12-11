@@ -18,6 +18,8 @@ import {
   setServerCategory,
   setServerDefaultChannel,
   setServerEventChannel,
+  isGuildLinkedToServer,
+  listGuildsForServer,
 } from "../db/serverStore";
 import { addAuthorizedRole, removeAuthorizedRole, listAuthorizedRoles } from "../db/authzStore";
 import { TextChannel, NewsChannel, ThreadChannel } from "discord.js";
@@ -223,6 +225,7 @@ async function handleSetDefaultChannel(
   const label = interaction.options.getString("label", true);
   const channel = interaction.options.getChannel("channel", true);
   const guildId = interaction.guildId!;
+  const authorized = await isAuthorized(interaction);
   const me = interaction.guild?.members.me;
   if (!me) {
     await interaction.reply({ content: "Bot member not found in this guild.", ephemeral: true });
@@ -252,8 +255,19 @@ async function handleSetDefaultChannel(
       });
       return;
     }
+    const linked = await isGuildLinkedToServer(server.id, guildId);
+    if (!linked) {
+      if (!authorized) {
+        await interaction.reply({
+          content: `This guild is not linked to server **${label}**. Use /register_server with its token, or have an authorized role/owner run it.`,
+          ephemeral: true,
+        });
+        return;
+      }
+      await linkServerToGuild(server.id, guildId);
+    }
+
     await setServerDefaultChannel(server.id, guildId, channel.id);
-    await linkServerToGuild(server.id, guildId);
     await interaction.reply({
       content: `Default channel for **${label}** set to <#${channel.id}>`,
       ephemeral: true,
@@ -274,6 +288,7 @@ async function handleSetEventChannel(
   const channel = interaction.options.getChannel("channel", true);
   const event = interaction.options.getString("event", true) as ServerEventName;
   const guildId = interaction.guildId!;
+  const authorized = await isAuthorized(interaction);
   const me = interaction.guild?.members.me;
   if (!me) {
     await interaction.reply({ content: "Bot member not found in this guild.", ephemeral: true });
@@ -308,6 +323,18 @@ async function handleSetEventChannel(
       });
       return;
     }
+    const linked = await isGuildLinkedToServer(server.id, guildId);
+    if (!linked) {
+      if (!authorized) {
+        await interaction.reply({
+          content: `This guild is not linked to server **${label}**. Use /register_server with its token, or have an authorized role/owner run it.`,
+          ephemeral: true,
+        });
+        return;
+      }
+      await linkServerToGuild(server.id, guildId);
+    }
+
     await setServerEventChannel(server.id, guildId, event, channel.id);
     await interaction.reply({
       content: `Channel for **${event}** (server ${label}) set to <#${channel.id}>`,
@@ -357,7 +384,17 @@ async function handleSetupEventChannels(
       });
       return;
     }
-    await linkServerToGuild(server.id, guild.id);
+    const authorized = await isAuthorized(interaction);
+    const linked = await isGuildLinkedToServer(server.id, guild.id);
+    if (!linked) {
+      if (!authorized) {
+        await interaction.editReply({
+          content: `This guild is not linked to server **${label}**. Use /register_server with its token, or have an authorized role/owner run it.`,
+        });
+        return;
+      }
+      await linkServerToGuild(server.id, guild.id);
+    }
 
     const category = await guild.channels.create({
       name: `sat-${label}`,
@@ -475,6 +512,15 @@ async function handleRegenerateServerToken(
       });
       return;
     }
+    const linked = await isGuildLinkedToServer(server.id, interaction.guild.id);
+    if (!linked && !authorized) {
+      await interaction.reply({
+        content: `This guild is not linked to server **${label}**. Only an authorized role/owner in a linked guild or someone with the current token can rotate it.`,
+        ephemeral: true,
+      });
+      return;
+    }
+
     const updated = await regenerateServerToken(label, currentToken, authorized);
     await interaction.reply({
       content: `New API token for **${label}** (store it safely):\n\`${updated.token}\`\nThis replaces any previous token.`,

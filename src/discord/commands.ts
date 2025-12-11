@@ -184,16 +184,15 @@ async function handleRegisterServer(
 
   const label = interaction.options.getString("label", true);
   const providedToken = interaction.options.getString("token") ?? undefined;
-  const authorized = await isAuthorized(interaction);
 
   try {
-    const server = await createOrUpdateServer(label, providedToken, { force: authorized });
+    const server = await createOrUpdateServer(label, providedToken);
     await linkServerToGuild(server.id, interaction.guild.id);
+    const created = !providedToken; // token only echoed on creation
     await interaction.reply({
-      content:
-        !providedToken && server.token
-          ? `Server **${label}** created and linked to this guild.\nToken: \`${server.token}\``
-          : `Server **${label}** linked to this guild.`,
+      content: created
+        ? `Server **${label}** created and linked to this guild.\nToken: \`${server.token}\``
+        : `Server **${label}** linked to this guild.`,
       ephemeral: true,
     });
   } catch (err) {
@@ -259,7 +258,7 @@ async function handleSetDefaultChannel(
     if (!linked) {
       if (!authorized) {
         await interaction.reply({
-          content: `This guild is not linked to server **${label}**. Use /register_server with its token, or have an authorized role/owner run it.`,
+          content: `This guild is not linked to server **${label}**. Use /register_server with its token first.`,
           ephemeral: true,
         });
         return;
@@ -327,7 +326,7 @@ async function handleSetEventChannel(
     if (!linked) {
       if (!authorized) {
         await interaction.reply({
-          content: `This guild is not linked to server **${label}**. Use /register_server with its token, or have an authorized role/owner run it.`,
+          content: `This guild is not linked to server **${label}**. Use /register_server with its token first.`,
           ephemeral: true,
         });
         return;
@@ -389,7 +388,7 @@ async function handleSetupEventChannels(
     if (!linked) {
       if (!authorized) {
         await interaction.editReply({
-          content: `This guild is not linked to server **${label}**. Use /register_server with its token, or have an authorized role/owner run it.`,
+          content: `This guild is not linked to server **${label}**. Use /register_server with its token first.`,
         });
         return;
       }
@@ -513,9 +512,9 @@ async function handleRegenerateServerToken(
       return;
     }
     const linked = await isGuildLinkedToServer(server.id, interaction.guild.id);
-    if (!linked && !authorized) {
+    if (!linked) {
       await interaction.reply({
-        content: `This guild is not linked to server **${label}**. Only an authorized role/owner in a linked guild or someone with the current token can rotate it.`,
+        content: `This guild is not linked to server **${label}**. Link it with /register_server using the current token first.`,
         ephemeral: true,
       });
       return;

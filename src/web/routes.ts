@@ -47,7 +47,7 @@ router.get("/api/guilds", async (req: Request, res: Response) => {
       const enriched = await Promise.all(
         servers.map(async (s) => {
           const config = await getServerConfigSnapshot(s.id, id);
-          return { id: s.id, label: s.label, token: s.token, ...config };
+          return { id: s.id, label: s.label, /* token omitted */, ...config };
         })
       );
       return { id, servers: enriched };

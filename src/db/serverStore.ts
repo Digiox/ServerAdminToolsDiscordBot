@@ -26,14 +26,9 @@ export async function getServerByToken(token: string): Promise<ServerRecord | nu
   return row ? { id: row.id, label: row.label, token: row.token } : null;
 }
 
-export async function createOrUpdateServer(
-  label: string,
-  token?: string,
-  opts?: { force?: boolean }
-): Promise<ServerRecord> {
+export async function createOrUpdateServer(label: string, token?: string): Promise<ServerRecord> {
   const existing = await getServerByLabel(label);
   if (existing) {
-    if (opts?.force) return existing;
     if (!token) throw new Error("TOKEN_REQUIRED");
     if (token !== existing.token) throw new Error("TOKEN_INVALID");
     return existing;

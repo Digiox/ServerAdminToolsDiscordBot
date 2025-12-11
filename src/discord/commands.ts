@@ -8,15 +8,39 @@ import {
   Routes,
   SlashCommandBuilder,
 } from "discord.js";
-import { ENV, requireEnv } from "../config/env";
+import { requireEnv } from "../config/env";
 import { SERVER_EVENT_NAMES, ServerEventName } from "../types/events";
-import { setDefaultChannel, setEventChannel, setApiToken } from "../db/channelStore";
+import {
+  createOrUpdateServer,
+  getServerByLabel,
+  linkServerToGuild,
+  regenerateServerToken,
+  setServerCategory,
+  setServerDefaultChannel,
+  setServerEventChannel,
+} from "../db/serverStore";
 import { TextChannel, NewsChannel, ThreadChannel } from "discord.js";
-import crypto from "crypto";
+
+const registerServerCommand = new SlashCommandBuilder()
+  .setName("register_server")
+  .setDescription("Register or link a server label to this guild (token optional)")
+  .addStringOption((option) =>
+    option.setName("label").setDescription("Unique label for this server").setRequired(true)
+  )
+  .addStringOption((option) =>
+    option
+      .setName("token")
+      .setDescription("Existing token (leave empty to generate)")
+      .setRequired(false)
+  )
+  .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageGuild);
 
 const setDefaultChannelCommand = new SlashCommandBuilder()
   .setName("set_default_channel")
-  .setDescription("Choose the channel used by default for bot messages")
+  .setDescription("Set default channel for a server label in this guild")
+  .addStringOption((option) =>
+    option.setName("label").setDescription("Server label").setRequired(true)
+  )
   .addChannelOption((option) =>
     option
       .setName("channel")
@@ -28,7 +52,10 @@ const setDefaultChannelCommand = new SlashCommandBuilder()
 
 const setEventChannelCommand = new SlashCommandBuilder()
   .setName("set_event_channel")
-  .setDescription("Map a specific event to a channel")
+  .setDescription("Map a specific event to a channel for a server label")
+  .addStringOption((option) =>
+    option.setName("label").setDescription("Server label").setRequired(true)
+  )
   .addStringOption((option) => {
     option.setName("event").setDescription("Event name").setRequired(true);
     SERVER_EVENT_NAMES.forEach((name) => option.addChoices({ name, value: name }));
@@ -45,12 +72,18 @@ const setEventChannelCommand = new SlashCommandBuilder()
 
 const setupEventChannelsCommand = new SlashCommandBuilder()
   .setName("setup_event_channels")
-  .setDescription("Create a category and one text channel per event, and link them")
+  .setDescription("Create a category and one text channel per event for a server label, and link them")
+  .addStringOption((option) =>
+    option.setName("label").setDescription("Server label").setRequired(true)
+  )
   .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageChannels);
 
-const generateApiTokenCommand = new SlashCommandBuilder()
-  .setName("generate_api_token")
-  .setDescription("Generate a new API token for webhooks (guild owner only)")
+const regenerateServerTokenCommand = new SlashCommandBuilder()
+  .setName("regen_server_token")
+  .setDescription("Regenerate API token for a server label (guild owner only)")
+  .addStringOption((option) =>
+    option.setName("label").setDescription("Server label").setRequired(true)
+  )
   .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator);
 
 const cleanupChannelsCommand = new SlashCommandBuilder()
@@ -68,10 +101,11 @@ const cleanupChannelsCommand = new SlashCommandBuilder()
   .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageChannels);
 
 export const commandData = [
+  registerServerCommand,
   setDefaultChannelCommand,
   setEventChannelCommand,
   setupEventChannelsCommand,
-  generateApiTokenCommand,
+  regenerateServerTokenCommand,
   cleanupChannelsCommand,
 ];
 
@@ -91,6 +125,9 @@ export async function handleInteraction(
 ): Promise<void> {
   if (!interaction.isChatInputCommand()) return;
   switch (interaction.commandName) {
+    case "register_server":
+      await handleRegisterServer(interaction);
+      break;
     case "set_default_channel":
       await handleSetDefaultChannel(interaction);
       break;
@@ -100,8 +137,8 @@ export async function handleInteraction(
     case "setup_event_channels":
       await handleSetupEventChannels(interaction);
       break;
-    case "generate_api_token":
-      await handleGenerateApiToken(interaction);
+    case "regen_server_token":
+      await handleRegenerateServerToken(interaction);
       break;
     case "cleanup_channels":
       await handleCleanupChannels(interaction);
@@ -111,9 +148,37 @@ export async function handleInteraction(
   }
 }
 
+async function handleRegisterServer(
+  interaction: ChatInputCommandInteraction
+): Promise<void> {
+  if (!interaction.guild) {
+    await interaction.reply({ content: "Use this in a server.", ephemeral: true });
+    return;
+  }
+
+  const label = interaction.options.getString("label", true);
+  const providedToken = interaction.options.getString("token") ?? undefined;
+
+  try {
+    const server = await createOrUpdateServer(label, providedToken);
+    await linkServerToGuild(server.id, interaction.guild.id);
+    await interaction.reply({
+      content: `Server **${label}** linked to this guild.\nToken: \`${server.token}\``,
+      ephemeral: true,
+    });
+  } catch (err) {
+    console.error("[discord] Failed to register server", err);
+    await interaction.reply({
+      content: "Failed to register the server. Is the label unique?",
+      ephemeral: true,
+    });
+  }
+}
+
 async function handleSetDefaultChannel(
   interaction: ChatInputCommandInteraction
 ): Promise<void> {
+  const label = interaction.options.getString("label", true);
   const channel = interaction.options.getChannel("channel", true);
   const guildId = interaction.guildId!;
   const me = interaction.guild?.members.me;
@@ -137,9 +202,18 @@ async function handleSetDefaultChannel(
   }
 
   try {
-    await setDefaultChannel(guildId, channel.id);
+    const server = await getServerByLabel(label);
+    if (!server) {
+      await interaction.reply({
+        content: `Server label "${label}" not registered. Use /register_server first.`,
+        ephemeral: true,
+      });
+      return;
+    }
+    await setServerDefaultChannel(server.id, guildId, channel.id);
+    await linkServerToGuild(server.id, guildId);
     await interaction.reply({
-      content: `Default channel set to <#${channel.id}>`,
+      content: `Default channel for **${label}** set to <#${channel.id}>`,
       ephemeral: true,
     });
   } catch (err) {
@@ -154,6 +228,7 @@ async function handleSetDefaultChannel(
 async function handleSetEventChannel(
   interaction: ChatInputCommandInteraction
 ): Promise<void> {
+  const label = interaction.options.getString("label", true);
   const channel = interaction.options.getChannel("channel", true);
   const event = interaction.options.getString("event", true) as ServerEventName;
   const guildId = interaction.guildId!;
@@ -183,9 +258,17 @@ async function handleSetEventChannel(
   }
 
   try {
-    await setEventChannel(guildId, event, channel.id);
+    const server = await getServerByLabel(label);
+    if (!server) {
+      await interaction.reply({
+        content: `Server label "${label}" not registered. Use /register_server first.`,
+        ephemeral: true,
+      });
+      return;
+    }
+    await setServerEventChannel(server.id, guildId, event, channel.id);
     await interaction.reply({
-      content: `Channel for **${event}** set to <#${channel.id}>`,
+      content: `Channel for **${event}** (server ${label}) set to <#${channel.id}>`,
       ephemeral: true,
     });
   } catch (err) {
@@ -200,6 +283,7 @@ async function handleSetEventChannel(
 async function handleSetupEventChannels(
   interaction: ChatInputCommandInteraction
 ): Promise<void> {
+  const label = interaction.options.getString("label", true);
   if (!interaction.guild) {
     await interaction.reply({ content: "Use this in a server.", ephemeral: true });
     return;
@@ -224,16 +308,28 @@ async function handleSetupEventChannels(
 
   const guild = interaction.guild;
   try {
+    const server = await getServerByLabel(label);
+    if (!server) {
+      await interaction.editReply({
+        content: `Server label "${label}" not registered. Use /register_server first.`,
+      });
+      return;
+    }
+    await linkServerToGuild(server.id, guild.id);
+
     const category = await guild.channels.create({
-      name: "server-admin-tools",
+      name: `sat-${label}`,
       type: ChannelType.GuildCategory,
-      reason: "Setup event channels for Server Admin Tools bot",
+      reason: `Setup event channels for Server Admin Tools bot (${label})`,
     });
+
+    await setServerCategory(server.id, guild.id, category.id);
 
     const created: string[] = [];
     const failedToPersist: string[] = [];
     for (const event of SERVER_EVENT_NAMES) {
-      const channelName = `sat-${event.replace("serveradmintools_", "").replace(/_/g, "-")}`;
+      const short = event.replace("serveradmintools_", "").replace(/_/g, "-");
+      const channelName = `sat-${label}-${short}`.toLowerCase();
       const channel = await guild.channels.create({
         name: channelName,
         type: ChannelType.GuildText,
@@ -241,8 +337,8 @@ async function handleSetupEventChannels(
         reason: `Channel for ${event}`,
       });
       try {
-        await setEventChannel(guild.id, event, channel.id);
-        created.push(`<#${channel.id}> ↔ ${event}`);
+        await setServerEventChannel(server.id, guild.id, event, channel.id);
+        created.push(`<#${channel.id}> - ${event}`);
       } catch (err) {
         console.error(`[discord] Failed to persist channel mapping for ${event}`, err);
         failedToPersist.push(event);
@@ -250,19 +346,18 @@ async function handleSetupEventChannels(
     }
 
     // set default to first created channel
-    const first = created.length ? created[0] : null;
-    if (first) {
-      const firstId = /\<\#(\d+)\>/.exec(first)?.[1];
-      if (firstId) {
-        try {
-          await setDefaultChannel(guild.id, firstId);
-        } catch (err) {
-          console.error("[discord] Failed to set default channel during setup", err);
-        }
+    const firstId = /\<\#(\d+)\>/.exec(created[0] ?? "")?.[1];
+    if (firstId) {
+      try {
+        await setServerDefaultChannel(server.id, guild.id, firstId);
+      } catch (err) {
+        console.error("[discord] Failed to set default channel during setup", err);
       }
     }
 
-    const details = [`Created category **${category.name}** and mapped channels:`];
+    const details = [
+      `Created category **${category.name}** for server **${label}** and mapped channels:`,
+    ];
     if (created.length) {
       details.push(created.join("\n"));
     }
@@ -296,7 +391,9 @@ function getChannelSendMissing(channel: any, member: GuildMember): string[] {
   ]);
 }
 
-async function handleGenerateApiToken(interaction: ChatInputCommandInteraction): Promise<void> {
+async function handleRegenerateServerToken(
+  interaction: ChatInputCommandInteraction
+): Promise<void> {
   if (!interaction.guild) {
     await interaction.reply({ content: "Use this in a server.", ephemeral: true });
     return;
@@ -305,18 +402,26 @@ async function handleGenerateApiToken(interaction: ChatInputCommandInteraction):
   const isOwner = interaction.guild.ownerId === interaction.user.id;
   if (!isOwner) {
     await interaction.reply({
-      content: "Only the guild owner can generate the API token.",
+      content: "Only the guild owner can regenerate the API token.",
       ephemeral: true,
     });
     return;
   }
 
-  const token = crypto.randomBytes(32).toString("hex");
+  const label = interaction.options.getString("label", true);
 
   try {
-    await setApiToken(interaction.guild.id, token);
+    const server = await getServerByLabel(label);
+    if (!server) {
+      await interaction.reply({
+        content: `Server label "${label}" not registered.`,
+        ephemeral: true,
+      });
+      return;
+    }
+    const updated = await regenerateServerToken(label);
     await interaction.reply({
-      content: `New API token (store it safely):\n\`${token}\`\nThis replaces any previous token.`,
+      content: `New API token for **${label}** (store it safely):\n\`${updated.token}\`\nThis replaces any previous token.`,
       ephemeral: true,
     });
   } catch (err) {

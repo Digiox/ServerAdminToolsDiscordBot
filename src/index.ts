@@ -4,7 +4,7 @@ import { dispatchEvent } from "./handlers/dispatcher";
 import { ENV } from "./config/env";
 import { startDiscord } from "./discord/client";
 import { getDb, initMigrations } from "./db/client";
-import { findGuildIdByToken } from "./db/channelStore";
+import { getServerByToken, listGuildsForServer } from "./db/serverStore";
 import { extractToken, normalizeBody } from "./utils/http";
 import session from "express-session";
 import passport from "passport";
@@ -66,9 +66,14 @@ app.post("/events", async (req: Request, res: Response) => {
     return;
   }
 
-  const guildId = await findGuildIdByToken(token);
-  if (!guildId) {
+  const server = await getServerByToken(token);
+  if (!server) {
     res.status(401).json({ error: "Invalid token" });
+    return;
+  }
+  const guildIds = await listGuildsForServer(server.id);
+  if (!guildIds.length) {
+    res.status(404).json({ error: "No guild linked to this server token" });
     return;
   }
 
@@ -81,13 +86,15 @@ app.post("/events", async (req: Request, res: Response) => {
     const isKnown = KNOWN_EVENT_NAMES.has(event.name as ServerEventName);
     if (isKnown) {
       recognized += 1;
-      logEvent(event as ServerEvent);
-      const result = await dispatchEvent(event as ServerEvent, guildId);
-      if (result.handled) {
-        handled += 1;
-      }
-      if (result.error) {
-        errors.push(String(result.error));
+      logEvent(event as ServerEvent, server.label);
+      for (const guildId of guildIds) {
+        const result = await dispatchEvent(event as ServerEvent, server.id, guildId);
+        if (result.handled) {
+          handled += 1;
+        }
+        if (result.error) {
+          errors.push(`guild ${guildId}: ${String(result.error)}`);
+        }
       }
     } else {
       logUnknownEvent(event);
@@ -117,9 +124,9 @@ app.use(
   }
 );
 
-function logEvent(event: ServerEvent): void {
+function logEvent(event: ServerEvent, serverLabel: string): void {
   console.info(
-    `[event:${event.name}] title="${event.title}" ts=${event.timestamp} data=${JSON.stringify(event.data)}`
+    `[event:${event.name}] server=${serverLabel} title="${event.title}" ts=${event.timestamp} data=${JSON.stringify(event.data)}`
   );
 }
 

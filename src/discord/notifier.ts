@@ -1,5 +1,5 @@
 import { Channel, DMChannel, NewsChannel, TextChannel, ThreadChannel } from "discord.js";
-import { getDefaultChannel, getEventChannel } from "../db/channelStore";
+import { getServerChannelForEvent } from "../db/serverStore";
 import { getDiscordClient } from "./client";
 
 type SendableChannel = TextChannel | NewsChannel | ThreadChannel | DMChannel;
@@ -7,6 +7,7 @@ type SendableChannel = TextChannel | NewsChannel | ThreadChannel | DMChannel;
 export async function sendEventMessage(
   eventName: string,
   content: string,
+  serverId: number,
   guildId: string
 ): Promise<void> {
   const client = getDiscordClient();
@@ -14,12 +15,11 @@ export async function sendEventMessage(
     throw new Error("Discord client not ready");
   }
 
-  const channelId =
-    (await getEventChannel(guildId, eventName as any)) ||
-    (await getDefaultChannel(guildId)) ||
-    null;
+  const channelId = await getServerChannelForEvent(serverId, guildId, eventName as any);
   if (!channelId) {
-    console.warn(`[notify] No channel mapped for event ${eventName} in guild ${guildId}`);
+    console.warn(
+      `[notify] No channel mapped for event ${eventName} in guild ${guildId} (server ${serverId})`
+    );
     return;
   }
 

@@ -5,14 +5,19 @@ let pool: mysql.Pool;
 
 export function getDb(): mysql.Pool {
   if (!pool) {
-    pool = mysql.createPool({
-      host: ENV.MYSQL_HOST,
-      port: ENV.MYSQL_PORT,
-      user: ENV.MYSQL_USER,
-      password: ENV.MYSQL_PASSWORD,
-      database: ENV.MYSQL_DATABASE,
-      connectionLimit: 10,
-    });
+    pool = ENV.MYSQL_URL
+      ? mysql.createPool({
+          uri: ENV.MYSQL_URL,
+          connectionLimit: 10,
+        })
+      : mysql.createPool({
+          host: ENV.MYSQL_HOST,
+          port: ENV.MYSQL_PORT,
+          user: ENV.MYSQL_USER,
+          password: ENV.MYSQL_PASSWORD,
+          database: ENV.MYSQL_DATABASE,
+          connectionLimit: 10,
+        });
   }
   return pool;
 }

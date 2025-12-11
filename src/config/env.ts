@@ -18,6 +18,7 @@ export const ENV = {
   DISCORD_PRIMARY_GUILD_ID: process.env.DISCORD_PRIMARY_GUILD_ID ?? "",
   SESSION_SECRET: process.env.SESSION_SECRET ?? "",
   OAUTH_CALLBACK_URL: process.env.OAUTH_CALLBACK_URL ?? "",
+  MYSQL_URL: process.env.MYSQL_URL || process.env.MYSQL_PUBLIC_URL || "",
   MYSQL_HOST: process.env.MYSQLHOST || process.env.MYSQL_HOST || "localhost",
   MYSQL_PORT: Number(process.env.MYSQLPORT || process.env.MYSQL_PORT || 3306),
   MYSQL_USER: process.env.MYSQLUSER || process.env.MYSQL_USER || "root",

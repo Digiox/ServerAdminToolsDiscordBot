@@ -1,10 +1,11 @@
-import express, { NextFunction, Request, Response } from "express";
+﻿import express, { NextFunction, Request, Response } from "express";
 import { EventBatchBody, SERVER_EVENT_NAMES, ServerEvent, ServerEventName } from "./types/events";
 import { dispatchEvent } from "./handlers/dispatcher";
 import { ENV } from "./config/env";
 import { startDiscord } from "./discord/client";
 import { getDb, initMigrations } from "./db/client";
 import { findGuildIdByToken } from "./db/channelStore";
+import { extractToken, normalizeBody } from "./utils/http";
 import session from "express-session";
 import passport from "passport";
 import { configurePassport } from "./web/auth";
@@ -115,33 +116,6 @@ app.use(
     next(err);
   }
 );
-
-function normalizeBody(body: unknown): EventBatchBody | null {
-  if (typeof body === "string") {
-    try {
-      return JSON.parse(body) as EventBatchBody;
-    } catch {
-      return null;
-    }
-  }
-
-  if (body && typeof body === "object") {
-    return body as EventBatchBody;
-  }
-
-  return null;
-}
-
-function extractToken(req: Request, body: EventBatchBody): string | null {
-  const auth = req.headers.authorization;
-  if (auth && auth.startsWith("Bearer ")) {
-    return auth.slice("Bearer ".length).trim() || null;
-  }
-  if (body.token && typeof body.token === "string") {
-    return body.token;
-  }
-  return null;
-}
 
 function logEvent(event: ServerEvent): void {
   console.info(

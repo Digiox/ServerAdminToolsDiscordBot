@@ -83,7 +83,15 @@ app.post("/events", async (req: Request, res: Response) => {
     if (legacyGuild) {
       // create legacy server record and link
       const label = `legacy-${legacyGuild}`;
-      server = await createOrUpdateServer(label, token);
+      try {
+        server = await createOrUpdateServer(label, token);
+      } catch (err) {
+        if (err instanceof Error && err.message === "TOKEN_INVALID") {
+          res.status(401).json({ error: "Invalid token" });
+          return;
+        }
+        throw err;
+      }
       await linkServerToGuild(server.id, legacyGuild);
 
       // migrate legacy channel mappings to server-based tables

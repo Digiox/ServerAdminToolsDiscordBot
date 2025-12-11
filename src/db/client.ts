@@ -78,4 +78,14 @@ export async function initMigrations(): Promise<void> {
       CONSTRAINT fk_sec_sg FOREIGN KEY (server_id, guild_id) REFERENCES server_guilds(server_id, guild_id) ON DELETE CASCADE
     )
   `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS guild_authorized_roles (
+      guild_id VARCHAR(64) NOT NULL,
+      role_id VARCHAR(64) NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (guild_id, role_id),
+      CONSTRAINT fk_auth_roles_guild FOREIGN KEY (guild_id) REFERENCES guilds(guild_id) ON DELETE CASCADE
+    )
+  `);
 }

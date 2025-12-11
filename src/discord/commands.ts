@@ -8,7 +8,7 @@ import {
   Routes,
   SlashCommandBuilder,
 } from "discord.js";
-import { requireEnv } from "../config/env";
+import { ENV, requireEnv } from "../config/env";
 import { SERVER_EVENT_NAMES, ServerEventName } from "../types/events";
 import {
   createOrUpdateServer,
@@ -19,6 +19,7 @@ import {
   setServerDefaultChannel,
   setServerEventChannel,
 } from "../db/serverStore";
+import { addAuthorizedRole, removeAuthorizedRole, listAuthorizedRoles } from "../db/authzStore";
 import { TextChannel, NewsChannel, ThreadChannel } from "discord.js";
 
 const registerServerCommand = new SlashCommandBuilder()
@@ -103,12 +104,26 @@ const cleanupChannelsCommand = new SlashCommandBuilder()
   )
   .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageChannels);
 
+const authorizeRoleCommand = new SlashCommandBuilder()
+  .setName("authorize_role")
+  .setDescription("Allow a role to manage Server Admin Tools (guild owner only)")
+  .addRoleOption((option) => option.setName("role").setDescription("Role to authorize").setRequired(true))
+  .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator);
+
+const unauthorizeRoleCommand = new SlashCommandBuilder()
+  .setName("unauthorize_role")
+  .setDescription("Remove a role from the authorized list (guild owner only)")
+  .addRoleOption((option) => option.setName("role").setDescription("Role to remove").setRequired(true))
+  .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator);
+
 export const commandData = [
   registerServerCommand,
   setDefaultChannelCommand,
   setEventChannelCommand,
   setupEventChannelsCommand,
   regenerateServerTokenCommand,
+  authorizeRoleCommand,
+  unauthorizeRoleCommand,
   cleanupChannelsCommand,
 ];
 
@@ -143,6 +158,12 @@ export async function handleInteraction(
     case "regen_server_token":
       await handleRegenerateServerToken(interaction);
       break;
+    case "authorize_role":
+      await handleAuthorizeRole(interaction);
+      break;
+    case "unauthorize_role":
+      await handleUnauthorizeRole(interaction);
+      break;
     case "cleanup_channels":
       await handleCleanupChannels(interaction);
       break;
@@ -161,13 +182,14 @@ async function handleRegisterServer(
 
   const label = interaction.options.getString("label", true);
   const providedToken = interaction.options.getString("token") ?? undefined;
+  const authorized = await isAuthorized(interaction);
 
   try {
-    const server = await createOrUpdateServer(label, providedToken);
+    const server = await createOrUpdateServer(label, providedToken, { force: authorized });
     await linkServerToGuild(server.id, interaction.guild.id);
     await interaction.reply({
       content:
-        server.token && !providedToken
+        !providedToken && server.token
           ? `Server **${label}** created and linked to this guild.\nToken: \`${server.token}\``
           : `Server **${label}** linked to this guild.`,
       ephemeral: true,
@@ -411,6 +433,18 @@ function getChannelSendMissing(channel: any, member: GuildMember): string[] {
   ]);
 }
 
+async function isAuthorized(interaction: ChatInputCommandInteraction): Promise<boolean> {
+  const guildId = interaction.guildId;
+  if (!guildId) return false;
+  const isOwner = interaction.guild?.ownerId === interaction.user.id;
+  if (isOwner) return true;
+  const roles = await listAuthorizedRoles(guildId);
+  if (!roles.length) return false;
+  const member = interaction.member as GuildMember | null;
+  const memberRoleIds = member ? Array.from(member.roles.cache.keys()) : [];
+  return memberRoleIds.some((r) => roles.includes(r));
+}
+
 async function handleRegenerateServerToken(
   interaction: ChatInputCommandInteraction
 ): Promise<void> {
@@ -430,6 +464,7 @@ async function handleRegenerateServerToken(
 
   const label = interaction.options.getString("label", true);
   const currentToken = interaction.options.getString("token", true);
+  const authorized = await isAuthorized(interaction);
 
   try {
     const server = await getServerByLabel(label);
@@ -440,7 +475,7 @@ async function handleRegenerateServerToken(
       });
       return;
     }
-    const updated = await regenerateServerToken(label, currentToken);
+    const updated = await regenerateServerToken(label, currentToken, authorized);
     await interaction.reply({
       content: `New API token for **${label}** (store it safely):\n\`${updated.token}\`\nThis replaces any previous token.`,
       ephemeral: true,
@@ -541,4 +576,54 @@ async function handleCleanupChannels(
       cannotAccess.length ? `\nSkipped (no access) ${cannotAccess.length}: ${cannotAccess.join(", ")}` : ""
     }${failed.length ? `\nFailed ${failed.length}: ${failed.join(", ")}` : ""}`,
   });
+}
+
+async function handleAuthorizeRole(
+  interaction: ChatInputCommandInteraction
+): Promise<void> {
+  if (!interaction.guild) {
+    await interaction.reply({ content: "Use this in a server.", ephemeral: true });
+    return;
+  }
+  const isOwner = interaction.guild.ownerId === interaction.user.id;
+  if (!isOwner) {
+    await interaction.reply({ content: "Only the guild owner can authorize roles.", ephemeral: true });
+    return;
+  }
+  const role = interaction.options.getRole("role", true);
+  try {
+    await addAuthorizedRole(interaction.guild.id, role.id);
+    await interaction.reply({
+      content: `Role <@&${role.id}> authorized for Server Admin Tools commands.`,
+      ephemeral: true,
+    });
+  } catch (err) {
+    console.error("[discord] authorize_role failed", err);
+    await interaction.reply({ content: "Failed to authorize role.", ephemeral: true });
+  }
+}
+
+async function handleUnauthorizeRole(
+  interaction: ChatInputCommandInteraction
+): Promise<void> {
+  if (!interaction.guild) {
+    await interaction.reply({ content: "Use this in a server.", ephemeral: true });
+    return;
+  }
+  const isOwner = interaction.guild.ownerId === interaction.user.id;
+  if (!isOwner) {
+    await interaction.reply({ content: "Only the guild owner can remove roles.", ephemeral: true });
+    return;
+  }
+  const role = interaction.options.getRole("role", true);
+  try {
+    await removeAuthorizedRole(interaction.guild.id, role.id);
+    await interaction.reply({
+      content: `Role <@&${role.id}> removed from authorization list.`,
+      ephemeral: true,
+    });
+  } catch (err) {
+    console.error("[discord] unauthorize_role failed", err);
+    await interaction.reply({ content: "Failed to unauthorize role.", ephemeral: true });
+  }
 }

@@ -26,12 +26,17 @@ export async function getServerByToken(token: string): Promise<ServerRecord | nu
   return row ? { id: row.id, label: row.label, token: row.token } : null;
 }
 
-export async function createOrUpdateServer(label: string, token?: string): Promise<ServerRecord> {
+export async function createOrUpdateServer(
+  label: string,
+  token?: string,
+  opts?: { force?: boolean }
+): Promise<ServerRecord> {
   const existing = await getServerByLabel(label);
   if (existing) {
+    if (opts?.force) return existing;
     if (!token) throw new Error("TOKEN_REQUIRED");
     if (token !== existing.token) throw new Error("TOKEN_INVALID");
-    return existing; // never overwrite token here
+    return existing;
   }
 
   const newToken = token ?? crypto.randomBytes(32).toString("hex");
@@ -43,12 +48,16 @@ export async function createOrUpdateServer(label: string, token?: string): Promi
   return { id: insertId, label, token: newToken };
 }
 
-export async function regenerateServerToken(label: string, currentToken: string): Promise<ServerRecord> {
+export async function regenerateServerToken(
+  label: string,
+  currentToken: string,
+  force = false
+): Promise<ServerRecord> {
   const server = await getServerByLabel(label);
   if (!server) {
     throw new Error("Server not found");
   }
-  if (server.token !== currentToken) {
+  if (!force && server.token !== currentToken) {
     throw new Error("TOKEN_INVALID");
   }
   const token = crypto.randomBytes(32).toString("hex");

@@ -18,7 +18,7 @@ body { margin: 0; background: radial-gradient(circle at 20% 20%, #13203a, #0d111
 .sidebar nav a:hover, .sidebar nav a.active { background: #1f2937; color: #fff; }
 
 .content { padding: 1.5rem 2rem 2rem; }
-.grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
 .card { background: #0f1624; border: 1px solid #1f2937; border-radius: 12px; padding: 1rem; box-shadow: 0 10px 30px rgba(0,0,0,0.25); }
 .card h2 { margin: 0 0 0.75rem; font-size: 1.1rem; }
 .muted { color: #94a3b8; }

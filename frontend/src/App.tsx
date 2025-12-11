@@ -1,12 +1,21 @@
-﻿import './style.css'
+import './style.css'
 import { useEffect, useMemo, useState } from 'react'
 import { SERVER_EVENT_NAMES } from './sharedEvents'
 
-interface GuildConfig {
+type EventName = (typeof SERVER_EVENT_NAMES)[number]
+
+interface ServerConfig {
+  id: number
+  label: string
   defaultChannelId: string | null
+  categoryId?: string | null
   eventChannelMap: Record<string, string>
+  token?: string | null
+}
+
+interface GuildConfig {
   id: string
-  apiToken?: string | null
+  servers: ServerConfig[]
 }
 
 interface GuildApiResponse {
@@ -20,9 +29,7 @@ const fetchJson = async <T,>(url: string, opts?: RequestInit): Promise<T> => {
     headers: { 'Content-Type': 'application/json' },
     ...opts,
   })
-  if (res.status === 401) {
-    throw new Error('unauthorized')
-  }
+  if (res.status === 401) throw new Error('unauthorized')
   if (!res.ok) throw new Error(`Request failed ${res.status}`)
   return res.json() as Promise<T>
 }
@@ -71,9 +78,12 @@ function App() {
           <a href="/auth/discord">Re-login</a>
           <a href="/logout">Logout</a>
         </nav>
+        <div className="muted" style={{ marginTop: '1rem', fontSize: '0.85rem' }}>
+          • Create/link server → set channels → copy token into Arma mod config.
+        </div>
       </aside>
       <main className="content">
-        <h2 style={{ marginTop: 0 }}>Guilds</h2>
+        <h2 style={{ marginTop: 0 }}>Guilds & Servers</h2>
         <div className="grid">
           {data.guilds.map((g) => (
             <GuildCard key={g.id} guild={g} onRefresh={load} />
@@ -85,42 +95,91 @@ function App() {
 }
 
 function GuildCard({ guild, onRefresh }: { guild: GuildConfig; onRefresh: () => void }) {
-  const [channelId, setChannelId] = useState('')
-  const [eventChannelId, setEventChannelId] = useState('')
-  const [eventName, setEventName] = useState<(typeof SERVER_EVENT_NAMES)[number]>(SERVER_EVENT_NAMES[0])
+  const [label, setLabel] = useState('')
+  const [token, setToken] = useState('')
+  const [message, setMessage] = useState<string | null>(null)
 
-  const mappedEvents = useMemo(() => Object.entries(guild.eventChannelMap || {}), [guild])
+  const servers = guild.servers ?? []
 
-  const regenToken = async () => {
-    await fetch('/web/guild/' + guild.id + '/token', { method: 'POST', credentials: 'include' })
-    // refetch to display token if backend includes it (currently not returned); just refresh UI
-    onRefresh()
-  }
-
-  const saveDefault = async () => {
-    await fetch('/web/guild/' + guild.id + '/default-channel', {
+  const registerServer = async () => {
+    setMessage(null)
+    const body = { label, token }
+    const res = await fetch(`/web/guild/${guild.id}/server`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ channelId }),
+      body: JSON.stringify(body),
     })
-    onRefresh()
-  }
-
-  const saveEvent = async () => {
-    await fetch('/web/guild/' + guild.id + '/event-channel', {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event: eventName, channelId: eventChannelId }),
-    })
+    if (!res.ok) {
+      const txt = await res.text()
+      throw new Error(txt || `Failed (${res.status})`)
+    }
+    const txt = await res.text()
+    if (txt && !txt.startsWith('<')) setMessage(txt)
     onRefresh()
   }
 
   return (
     <div className="card">
       <h2>Guild {guild.id}</h2>
-      <p className="muted">Default channel: {guild.defaultChannelId ?? 'not set'}</p>
+
+      <div className="muted" style={{ marginBottom: '0.5rem' }}>Create or link a server</div>
+      <div className="row" style={{ marginBottom: '0.5rem' }}>
+        <input placeholder="label" value={label} onChange={(e) => setLabel(e.target.value)} />
+        <input placeholder="token (optional/new)" value={token} onChange={(e) => setToken(e.target.value)} />
+        <button onClick={registerServer}>Register</button>
+      </div>
+      {message && <div className="token">{message}</div>}
+
+      {servers.length === 0 && <p className="muted">No servers linked yet.</p>}
+      {servers.map((s) => (
+        <ServerCard key={s.id} guildId={guild.id} server={s} onRefresh={onRefresh} />
+      ))}
+    </div>
+  )
+}
+
+function ServerCard({ guildId, server, onRefresh }: { guildId: string; server: ServerConfig; onRefresh: () => void }) {
+  const [defaultChannel, setDefaultChannel] = useState('')
+  const [eventChannelId, setEventChannelId] = useState('')
+  const [eventName, setEventName] = useState<EventName>(SERVER_EVENT_NAMES[0])
+
+  const mappedEvents = useMemo(() => Object.entries(server.eventChannelMap || {}), [server])
+
+  const setDefault = async () => {
+    await fetch(`/web/guild/${guildId}/default-channel`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: server.label, channelId: defaultChannel }),
+    })
+    onRefresh()
+  }
+
+  const setEvent = async () => {
+    await fetch(`/web/guild/${guildId}/event-channel`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: server.label, event: eventName, channelId: eventChannelId }),
+    })
+    onRefresh()
+  }
+
+  return (
+    <div className="card" style={{ marginTop: '0.75rem' }}>
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <h3 style={{ margin: 0 }}>Server {server.label}</h3>
+        <span className="pill">ID {server.id}</span>
+      </div>
+      {server.token && (
+        <div style={{ margin: '0.35rem 0' }}>
+          <div className="muted">Token</div>
+          <div className="token">{server.token}</div>
+        </div>
+      )}
+      <p className="muted">Default channel: {server.defaultChannelId ?? 'not set'}</p>
+      {server.categoryId && <p className="muted">Category: {server.categoryId}</p>}
 
       <details>
         <summary>Event channel map</summary>
@@ -139,17 +198,17 @@ function GuildCard({ guild, onRefresh }: { guild: GuildConfig; onRefresh: () => 
         <div className="row">
           <input
             placeholder="channel ID"
-            value={channelId}
-            onChange={(e) => setChannelId(e.target.value)}
+            value={defaultChannel}
+            onChange={(e) => setDefaultChannel(e.target.value)}
           />
-          <button onClick={saveDefault}>Save</button>
+          <button onClick={setDefault}>Save</button>
         </div>
       </div>
 
       <div style={{ marginTop: '0.75rem' }}>
         <div className="muted">Map event → channel</div>
         <div className="row">
-          <select value={eventName} onChange={(e) => setEventName(e.target.value as (typeof SERVER_EVENT_NAMES)[number])}>
+          <select value={eventName} onChange={(e) => setEventName(e.target.value as EventName)}>
             {SERVER_EVENT_NAMES.map((evt) => (
               <option key={evt} value={evt}>
                 {evt}
@@ -161,12 +220,8 @@ function GuildCard({ guild, onRefresh }: { guild: GuildConfig; onRefresh: () => 
             value={eventChannelId}
             onChange={(e) => setEventChannelId(e.target.value)}
           />
-          <button onClick={saveEvent}>Save</button>
+          <button onClick={setEvent}>Save</button>
         </div>
-      </div>
-
-      <div style={{ marginTop: '0.75rem' }}>
-        <button onClick={regenToken}>Generate new API token</button>
       </div>
     </div>
   )

@@ -40,22 +40,33 @@ router.get("/api/guilds", async (req: Request, res: Response) => {
   if (!isAuthed) {
     return res.status(401).json({ error: "unauthorized" });
   }
+
+  const profile = (req as any).user?.profile;
+  const ownerGuildIds: Set<string> = new Set(
+    (profile?.guilds || []).filter((g: any) => g.owner).map((g: any) => g.id)
+  );
+
+  if (!ownerGuildIds.size) {
+    return res.status(403).json({ error: "forbidden" });
+  }
+
   const ids = await listGuildIds();
+  const owned = ids.filter((id) => ownerGuildIds.has(id));
+
   const guilds = await Promise.all(
-    ids.map(async (id) => {
+    owned.map(async (id) => {
       const servers = await listServersForGuild(id);
       const enriched = await Promise.all(
         servers.map(async (s) => {
           const config = await getServerConfigSnapshot(s.id, id);
-          const { token, ...rest } = config as any;
-          return { id: s.id, label: s.label, ...rest };
+          return { id: s.id, label: s.label, token: s.token, ...config };
         })
       );
       return { id, servers: enriched };
     })
   );
-  const user = (req as any).user?.profile;
-  res.json({ guilds, user });
+
+  res.json({ guilds, user: profile });
 });
 
 // Create/link server from web (label + optional token)

@@ -3,20 +3,12 @@ import { ConflictBaseCapturedEvent } from "../types/events";
 
 export async function handleConflictBaseCaptured(
   event: ConflictBaseCapturedEvent,
+  serverId: number,
   guildId: string
 ): Promise<void> {
   const { faction, base } = event.data;
-
-  if (!isNonEmptyString(faction) || !isNonEmptyString(base)) {
-    throw new Error("Invalid conflict_base_captured payload");
-  }
-
-  const content = `🏳️ Base captured: ${base} by ${faction}`;
-  await sendEventMessage(event.name, content, guildId);
-
-  console.info(`[conflict_base_captured] base="${base}" faction="${faction}" ts=${event.timestamp}`);
+  const content = `Base **${base}** captured by **${faction}**`;
+  await sendEventMessage(event.name, content, serverId, guildId);
+  console.info(`[conflict_base_captured] faction=${faction} base=${base}`);
 }
 
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0;
-}

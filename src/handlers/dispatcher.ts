@@ -25,50 +25,54 @@ export interface DispatchResult {
   error?: unknown;
 }
 
-export async function dispatchEvent(event: ServerEvent, guildId: string): Promise<DispatchResult> {
+export async function dispatchEvent(
+  event: ServerEvent,
+  serverId: number,
+  guildId: string
+): Promise<DispatchResult> {
   try {
     if (isPlayerJoinedEvent(event)) {
-      await handlePlayerJoined(event, guildId);
+      await handlePlayerJoined(event, serverId, guildId);
       return { handled: true };
     }
 
     if (isPlayerKilledEvent(event)) {
-      await handlePlayerKilled(event, guildId);
+      await handlePlayerKilled(event, serverId, guildId);
       return { handled: true };
     }
 
     if (isGameStartedEvent(event)) {
-      await handleGameStarted(event, guildId);
+      await handleGameStarted(event, serverId, guildId);
       return { handled: true };
     }
 
     if (isGameEndedEvent(event)) {
-      await handleGameEnded(event, guildId);
+      await handleGameEnded(event, serverId, guildId);
       return { handled: true };
     }
 
     if (isVoteStartedEvent(event)) {
-      await handleVoteStarted(event, guildId);
+      await handleVoteStarted(event, serverId, guildId);
       return { handled: true };
     }
 
     if (isVoteEndedEvent(event)) {
-      await handleVoteEnded(event, guildId);
+      await handleVoteEnded(event, serverId, guildId);
       return { handled: true };
     }
 
     if (isServerFpsLowEvent(event)) {
-      await handleServerFpsLow(event, guildId);
+      await handleServerFpsLow(event, serverId, guildId);
       return { handled: true };
     }
 
     if (isAdminActionEvent(event)) {
-      await handleAdminAction(event, guildId);
+      await handleAdminAction(event, serverId, guildId);
       return { handled: true };
     }
 
     if (isConflictBaseCapturedEvent(event)) {
-      await handleConflictBaseCaptured(event, guildId);
+      await handleConflictBaseCaptured(event, serverId, guildId);
       return { handled: true };
     }
 

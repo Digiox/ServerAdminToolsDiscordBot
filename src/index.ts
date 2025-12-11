@@ -1,10 +1,18 @@
 ﻿import express, { NextFunction, Request, Response } from "express";
-import { EventBatchBody, SERVER_EVENT_NAMES, ServerEvent, ServerEventName } from "./types/events";
+import { EventBatchBody, ServerEvent, ServerEventName, SERVER_EVENT_NAMES } from "./types/events";
 import { dispatchEvent } from "./handlers/dispatcher";
 import { ENV } from "./config/env";
 import { startDiscord } from "./discord/client";
 import { getDb, initMigrations } from "./db/client";
-import { findGuildIdByToken } from "./db/channelStore";
+import {
+  getServerByToken,
+  listGuildsForServer,
+  createOrUpdateServer,
+  linkServerToGuild,
+  setServerDefaultChannel,
+  setServerEventChannel,
+} from "./db/serverStore";
+import { findGuildIdByToken, getDefaultChannel, getEventChannel } from "./db/channelStore";
 import { extractToken, normalizeBody } from "./utils/http";
 import session from "express-session";
 import passport from "passport";
@@ -66,9 +74,53 @@ app.post("/events", async (req: Request, res: Response) => {
     return;
   }
 
-  const guildId = await findGuildIdByToken(token);
-  if (!guildId) {
+  let server = await getServerByToken(token);
+  let guildIds: string[] = [];
+
+  if (!server) {
+    // fallback legacy: guilds.api_token
+    const legacyGuild = await findGuildIdByToken(token);
+    if (legacyGuild) {
+      // create legacy server record and link
+      const label = `legacy-${legacyGuild}`;
+      try {
+        server = await createOrUpdateServer(label, token);
+      } catch (err) {
+        if (err instanceof Error && err.message === "TOKEN_INVALID") {
+          res.status(401).json({ error: "Invalid token" });
+          return;
+        }
+        throw err;
+      }
+      await linkServerToGuild(server.id, legacyGuild);
+
+      // migrate legacy channel mappings to server-based tables
+      const legacyDefault = await getDefaultChannel(legacyGuild);
+      if (legacyDefault) {
+        await setServerDefaultChannel(server.id, legacyGuild, legacyDefault);
+      }
+      for (const evt of SERVER_EVENT_NAMES) {
+        const legacyEvtChan = await getEventChannel(legacyGuild, evt as any);
+        if (legacyEvtChan) {
+          await setServerEventChannel(server.id, legacyGuild, evt as any, legacyEvtChan);
+        }
+      }
+
+      guildIds = [legacyGuild];
+    }
+  }
+
+  if (server && guildIds.length === 0) {
+    guildIds = await listGuildsForServer(server.id);
+  }
+
+  if (!server) {
     res.status(401).json({ error: "Invalid token" });
+    return;
+  }
+
+  if (!guildIds.length) {
+    res.status(404).json({ error: "No guild linked to this server token" });
     return;
   }
 
@@ -81,13 +133,15 @@ app.post("/events", async (req: Request, res: Response) => {
     const isKnown = KNOWN_EVENT_NAMES.has(event.name as ServerEventName);
     if (isKnown) {
       recognized += 1;
-      logEvent(event as ServerEvent);
-      const result = await dispatchEvent(event as ServerEvent, guildId);
-      if (result.handled) {
-        handled += 1;
-      }
-      if (result.error) {
-        errors.push(String(result.error));
+      logEvent(event as ServerEvent, server.label);
+      for (const guildId of guildIds) {
+        const result = await dispatchEvent(event as ServerEvent, server.id, guildId);
+        if (result.handled) {
+          handled += 1;
+        }
+        if (result.error) {
+          errors.push(`guild ${guildId}: ${String(result.error)}`);
+        }
       }
     } else {
       logUnknownEvent(event);
@@ -117,9 +171,9 @@ app.use(
   }
 );
 
-function logEvent(event: ServerEvent): void {
+function logEvent(event: ServerEvent, serverLabel: string): void {
   console.info(
-    `[event:${event.name}] title="${event.title}" ts=${event.timestamp} data=${JSON.stringify(event.data)}`
+    `[event:${event.name}] server=${serverLabel} title="${event.title}" ts=${event.timestamp} data=${JSON.stringify(event.data)}`
   );
 }
 

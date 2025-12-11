@@ -63,6 +63,7 @@ router.post("/web/guild/:id/server", ensureGuildAuthorized, async (req: Request,
   const guildId = req.params.id as string;
   const label = (req.body.label as string)?.trim();
   const token = (req.body.token as string)?.trim() || undefined;
+  const newTokenRequested = !token;
   if (!label) {
     res.redirect("/web");
     return;
@@ -70,7 +71,11 @@ router.post("/web/guild/:id/server", ensureGuildAuthorized, async (req: Request,
   try {
     const server = await createOrUpdateServer(label, token);
     await linkServerToGuild(server.id, guildId);
-    res.redirect("/web");
+    if (newTokenRequested) {
+      res.status(200).send(`Server "${label}" created. Token (save it now): ${server.token}`);
+    } else {
+      res.redirect("/web");
+    }
   } catch (err) {
     if ((err as Error).message === "TOKEN_REQUIRED") {
       res.status(400).send("Existing server label: token required to link.");

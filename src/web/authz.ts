@@ -23,16 +23,9 @@ export async function ensureGuildAuthorized(req: Request, res: Response, next: N
     next();
     return;
   }
-  const roles = await listAuthorizedRoles(guildId);
-  if (!roles.length) {
-    res.status(403).json({ error: "forbidden" });
-    return;
-  }
-  const memberRoles: string[] = profile.guild_roles?.[guildId] ?? [];
-  const ok = memberRoles.some((r) => roles.includes(r));
-  if (!ok) {
-    res.status(403).json({ error: "forbidden" });
-    return;
-  }
-  next();
+
+  // NOTE: we cannot verify member roles with current OAuth scopes (identify+guilds only).
+  // To avoid false negatives, only guild owners are allowed past this middleware until
+  // we add a member-role aware flow (e.g., guilds.members.read or bot-side session).
+  res.status(403).json({ error: "forbidden" });
 }

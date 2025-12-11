@@ -44,6 +44,12 @@ const setDefaultChannelCommand = new SlashCommandBuilder()
   .addStringOption((option) =>
     option.setName("label").setDescription("Server label").setRequired(true)
   )
+  .addStringOption((option) =>
+    option
+      .setName("token")
+      .setDescription("Server token (required if this guild is not linked yet)")
+      .setRequired(false)
+  )
   .addChannelOption((option) =>
     option
       .setName("channel")
@@ -58,6 +64,12 @@ const setEventChannelCommand = new SlashCommandBuilder()
   .setDescription("Map a specific event to a channel for a server label")
   .addStringOption((option) =>
     option.setName("label").setDescription("Server label").setRequired(true)
+  )
+  .addStringOption((option) =>
+    option
+      .setName("token")
+      .setDescription("Server token (required if this guild is not linked yet)")
+      .setRequired(false)
   )
   .addStringOption((option) => {
     option.setName("event").setDescription("Event name").setRequired(true);
@@ -78,6 +90,12 @@ const setupEventChannelsCommand = new SlashCommandBuilder()
   .setDescription("Create a category and one text channel per event for a server label, and link them")
   .addStringOption((option) =>
     option.setName("label").setDescription("Server label").setRequired(true)
+  )
+  .addStringOption((option) =>
+    option
+      .setName("token")
+      .setDescription("Server token (required if this guild is not linked yet)")
+      .setRequired(false)
   )
   .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageChannels);
 
@@ -224,6 +242,7 @@ async function handleSetDefaultChannel(
   const label = interaction.options.getString("label", true);
   const channel = interaction.options.getChannel("channel", true);
   const guildId = interaction.guildId!;
+  const providedToken = interaction.options.getString("token") ?? undefined;
   const authorized = await isAuthorized(interaction);
   const me = interaction.guild?.members.me;
   if (!me) {
@@ -256,9 +275,9 @@ async function handleSetDefaultChannel(
     }
     const linked = await isGuildLinkedToServer(server.id, guildId);
     if (!linked) {
-      if (!authorized) {
+      if (!providedToken || providedToken !== server.token) {
         await interaction.reply({
-          content: `This guild is not linked to server **${label}**. Use /register_server with its token first.`,
+          content: `This guild is not linked to server **${label}**. Provide the server token to link it.`,
           ephemeral: true,
         });
         return;
@@ -287,6 +306,7 @@ async function handleSetEventChannel(
   const channel = interaction.options.getChannel("channel", true);
   const event = interaction.options.getString("event", true) as ServerEventName;
   const guildId = interaction.guildId!;
+  const providedToken = interaction.options.getString("token") ?? undefined;
   const authorized = await isAuthorized(interaction);
   const me = interaction.guild?.members.me;
   if (!me) {
@@ -324,9 +344,9 @@ async function handleSetEventChannel(
     }
     const linked = await isGuildLinkedToServer(server.id, guildId);
     if (!linked) {
-      if (!authorized) {
+      if (!providedToken || providedToken !== server.token) {
         await interaction.reply({
-          content: `This guild is not linked to server **${label}**. Use /register_server with its token first.`,
+          content: `This guild is not linked to server **${label}**. Provide the server token to link it.`,
           ephemeral: true,
         });
         return;
@@ -352,6 +372,7 @@ async function handleSetupEventChannels(
   interaction: ChatInputCommandInteraction
 ): Promise<void> {
   const label = interaction.options.getString("label", true);
+  const providedToken = interaction.options.getString("token") ?? undefined;
   if (!interaction.guild) {
     await interaction.reply({ content: "Use this in a server.", ephemeral: true });
     return;
@@ -386,9 +407,9 @@ async function handleSetupEventChannels(
     const authorized = await isAuthorized(interaction);
     const linked = await isGuildLinkedToServer(server.id, guild.id);
     if (!linked) {
-      if (!authorized) {
+      if (!providedToken || providedToken !== server.token) {
         await interaction.editReply({
-          content: `This guild is not linked to server **${label}**. Use /register_server with its token first.`,
+          content: `This guild is not linked to server **${label}**. Provide the server token to link it.`,
         });
         return;
       }
@@ -500,7 +521,6 @@ async function handleRegenerateServerToken(
 
   const label = interaction.options.getString("label", true);
   const currentToken = interaction.options.getString("token", true);
-  const authorized = await isAuthorized(interaction);
 
   try {
     const server = await getServerByLabel(label);
@@ -520,7 +540,7 @@ async function handleRegenerateServerToken(
       return;
     }
 
-    const updated = await regenerateServerToken(label, currentToken, authorized);
+    const updated = await regenerateServerToken(label, currentToken, false);
     await interaction.reply({
       content: `New API token for **${label}** (store it safely):\n\`${updated.token}\`\nThis replaces any previous token.`,
       ephemeral: true,

@@ -4,7 +4,8 @@ import { dispatchEvent } from "./handlers/dispatcher";
 import { ENV } from "./config/env";
 import { startDiscord } from "./discord/client";
 import { getDb, initMigrations } from "./db/client";
-import { getServerByToken, listGuildsForServer } from "./db/serverStore";
+import { getServerByToken, listGuildsForServer, createOrUpdateServer, linkServerToGuild } from "./db/serverStore";
+import { findGuildIdByToken } from "./db/channelStore";
 import { extractToken, normalizeBody } from "./utils/http";
 import session from "express-session";
 import passport from "passport";
@@ -66,12 +67,30 @@ app.post("/events", async (req: Request, res: Response) => {
     return;
   }
 
-  const server = await getServerByToken(token);
+  let server = await getServerByToken(token);
+  let guildIds: string[] = [];
+
+  if (!server) {
+    // fallback legacy: guilds.api_token
+    const legacyGuild = await findGuildIdByToken(token);
+    if (legacyGuild) {
+      // create legacy server record and link
+      const label = `legacy-${legacyGuild}`;
+      server = await createOrUpdateServer(label, token);
+      await linkServerToGuild(server.id, legacyGuild);
+      guildIds = [legacyGuild];
+    }
+  }
+
+  if (server && guildIds.length === 0) {
+    guildIds = await listGuildsForServer(server.id);
+  }
+
   if (!server) {
     res.status(401).json({ error: "Invalid token" });
     return;
   }
-  const guildIds = await listGuildsForServer(server.id);
+
   if (!guildIds.length) {
     res.status(404).json({ error: "No guild linked to this server token" });
     return;

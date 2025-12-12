@@ -11,7 +11,7 @@ import {
 } from "../db/serverStore";
 import { listGuildIds } from "../db/channelStore";
 import { SERVER_EVENT_NAMES } from "../types/events";
-import { ensureGuildAuthorized } from "./authz";
+import { ensureGuildAuthorized, buildGuildAccessMap } from "./authz";
 
 const router = Router();
 
@@ -42,27 +42,33 @@ router.get("/api/guilds", async (req: Request, res: Response) => {
   }
 
   const profile = (req as any).user?.profile;
-  const ownerGuildIds: Set<string> = new Set(
-    (profile?.guilds || []).filter((g: any) => g.owner).map((g: any) => g.id)
-  );
+  if (!profile) {
+    return res.status(401).json({ error: "unauthorized" });
+  }
 
-  if (!ownerGuildIds.size) {
+  const accessMap = buildGuildAccessMap(profile);
+
+  if (!accessMap.size) {
     return res.status(403).json({ error: "forbidden" });
   }
 
   const ids = await listGuildIds();
-  const owned = ids.filter((id) => ownerGuildIds.has(id));
+  const manageableGuilds = ids.filter((id) => accessMap.has(id));
 
   const guilds = await Promise.all(
-    owned.map(async (id) => {
+    manageableGuilds.map(async (id) => {
       const servers = await listServersForGuild(id);
+      const includeToken = accessMap.get(id)?.isOwner ?? false;
       const enriched = await Promise.all(
         servers.map(async (s) => {
           const config = await getServerConfigSnapshot(s.id, id);
-          return { id: s.id, label: s.label, token: s.token, ...config };
+          const base = { id: s.id, label: s.label, ...config };
+          return includeToken ? { ...base, token: s.token } : base;
         })
       );
-      return { id, servers: enriched };
+      const guildMeta = (profile.guilds || []).find((g: any) => g.id === id);
+      const name = guildMeta?.name ?? id;
+      return { id, name, servers: enriched };
     })
   );
 

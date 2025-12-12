@@ -15,6 +15,7 @@ interface ServerConfig {
 
 interface GuildConfig {
   id: string
+  name?: string
   servers: ServerConfig[]
 }
 
@@ -38,6 +39,7 @@ function App() {
   const [data, setData] = useState<GuildApiResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [selectedGuildId, setSelectedGuildId] = useState<string | null>(null)
 
   const load = () => {
     setLoading(true)
@@ -51,7 +53,15 @@ function App() {
     load()
   }, [])
 
-  if (loading) return <div className="content"><p>Loading…</p></div>
+  useEffect(() => {
+    if (data?.guilds?.length) {
+      setSelectedGuildId((prev) => (prev && data.guilds.some((g) => g.id === prev) ? prev : data.guilds[0].id))
+    } else {
+      setSelectedGuildId(null)
+    }
+  }, [data])
+
+  if (loading) return <div className="content"><p>Loading...</p></div>
 
   if (error === 'unauthorized') {
     return (
@@ -68,27 +78,43 @@ function App() {
   if (error) return <div className="content"><p>Error: {error}</p></div>
   if (!data) return null
 
+  const selectedGuild = data.guilds.find((g) => g.id === selectedGuildId) || null
+
   return (
     <div className="layout">
       <aside className="sidebar">
         <h1>Server Admin Tools</h1>
         <div className="user">Logged in as {data.user?.username ?? 'unknown'}</div>
         <nav>
-          <a className="active" href="#">Dashboard</a>
           <a href="/auth/discord">Re-login</a>
           <a href="/logout">Logout</a>
         </nav>
+        <div className="muted" style={{ marginTop: '1rem', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Guilds</div>
+        <div className="guild-list">
+          {data.guilds.map((g) => (
+            <button
+              key={g.id}
+              className={selectedGuildId === g.id ? 'active' : ''}
+              onClick={() => setSelectedGuildId(g.id)}
+            >
+              {g.name ?? g.id}
+            </button>
+          ))}
+          {data.guilds.length === 0 && <div className="muted">Aucune guilde autorisee</div>}
+        </div>
         <div className="muted" style={{ marginTop: '1rem', fontSize: '0.85rem' }}>
-          • Create/link server → set channels → copy token into Arma mod config.
+          &gt; Create/link server &gt; set channels &gt; copy token into Arma mod config.
         </div>
       </aside>
       <main className="content">
         <h2 style={{ marginTop: 0 }}>Guilds & Servers</h2>
-        <div className="grid">
-          {data.guilds.map((g) => (
-            <GuildCard key={g.id} guild={g} onRefresh={load} />
-          ))}
-        </div>
+        {data.guilds.length === 0 && <p className="muted">Aucune guilde autorisee.</p>}
+        {data.guilds.length > 0 && !selectedGuild && <p className="muted">Selectionnez une guilde.</p>}
+        {selectedGuild && (
+          <div className="grid">
+            <GuildCard key={selectedGuild.id} guild={selectedGuild} onRefresh={load} />
+          </div>
+        )}
       </main>
     </div>
   )
@@ -121,7 +147,8 @@ function GuildCard({ guild, onRefresh }: { guild: GuildConfig; onRefresh: () => 
 
   return (
     <div className="card">
-      <h2>Guild {guild.id}</h2>
+      <h2>{guild.name ?? guild.id}</h2>
+      <p className="muted" style={{ marginTop: -8 }}>ID: {guild.id}</p>
 
       <div className="muted" style={{ marginBottom: '0.5rem' }}>Create or link a server</div>
       <div className="row" style={{ marginBottom: '0.5rem' }}>
@@ -187,7 +214,7 @@ function ServerCard({ guildId, server, onRefresh }: { guildId: string; server: S
           {mappedEvents.length === 0 && <li className="muted">Empty</li>}
           {mappedEvents.map(([evt, chan]) => (
             <li key={evt}>
-              <code>{evt}</code> → <code>{chan}</code>
+              <code>{evt}</code> -&gt; <code>{chan}</code>
             </li>
           ))}
         </ul>
@@ -206,7 +233,7 @@ function ServerCard({ guildId, server, onRefresh }: { guildId: string; server: S
       </div>
 
       <div style={{ marginTop: '0.75rem' }}>
-        <div className="muted">Map event → channel</div>
+        <div className="muted">Map event -&gt; channel</div>
         <div className="row">
           <select value={eventName} onChange={(e) => setEventName(e.target.value as EventName)}>
             {SERVER_EVENT_NAMES.map((evt) => (

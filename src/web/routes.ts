@@ -11,7 +11,7 @@ import {
 } from "../db/serverStore";
 import { listGuildIds } from "../db/channelStore";
 import { SERVER_EVENT_NAMES } from "../types/events";
-import { ensureGuildAuthorized } from "./authz";
+import { ensureGuildAuthorized, buildGuildAccessMap } from "./authz";
 
 const router = Router();
 
@@ -40,22 +40,39 @@ router.get("/api/guilds", async (req: Request, res: Response) => {
   if (!isAuthed) {
     return res.status(401).json({ error: "unauthorized" });
   }
+
+  const profile = (req as any).user?.profile;
+  if (!profile) {
+    return res.status(401).json({ error: "unauthorized" });
+  }
+
+  const accessMap = buildGuildAccessMap(profile);
+
+  if (!accessMap.size) {
+    return res.status(403).json({ error: "forbidden" });
+  }
+
   const ids = await listGuildIds();
+  const manageableGuilds = ids.filter((id) => accessMap.has(id));
+
   const guilds = await Promise.all(
-    ids.map(async (id) => {
+    manageableGuilds.map(async (id) => {
       const servers = await listServersForGuild(id);
+      const includeToken = accessMap.get(id)?.isOwner ?? false;
       const enriched = await Promise.all(
         servers.map(async (s) => {
           const config = await getServerConfigSnapshot(s.id, id);
-          const { token, ...rest } = config as any;
-          return { id: s.id, label: s.label, ...rest };
+          const base = { id: s.id, label: s.label, ...config };
+          return includeToken ? { ...base, token: s.token } : base;
         })
       );
-      return { id, servers: enriched };
+      const guildMeta = (profile.guilds || []).find((g: any) => g.id === id);
+      const name = guildMeta?.name ?? id;
+      return { id, name, servers: enriched };
     })
   );
-  const user = (req as any).user?.profile;
-  res.json({ guilds, user });
+
+  res.json({ guilds, user: profile });
 });
 
 // Create/link server from web (label + optional token)

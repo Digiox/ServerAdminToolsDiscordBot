@@ -18,7 +18,7 @@ body { margin: 0; background: radial-gradient(circle at 20% 20%, #13203a, #0d111
 .sidebar nav a:hover, .sidebar nav a.active { background: #1f2937; color: #fff; }
 
 .content { padding: 1.5rem 2rem 2rem; }
-.grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
 .card { background: #0f1624; border: 1px solid #1f2937; border-radius: 12px; padding: 1rem; box-shadow: 0 10px 30px rgba(0,0,0,0.25); }
 .card h2 { margin: 0 0 0.75rem; font-size: 1.1rem; }
 .muted { color: #94a3b8; }
@@ -32,3 +32,7 @@ button:active { transform: translateY(1px); }
 details { margin-top: 0.5rem; }
 code { background: #111827; padding: 0.15rem 0.35rem; border-radius: 6px; }
 .token { word-break: break-all; background: #111827; padding: 0.5rem; border-radius: 8px; border: 1px solid #1f2937; font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace; }
+.guild-list { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.4rem; }
+.guild-list button { width: 100%; text-align: left; background: #0b1220; border: 1px solid #1f2937; color: #cbd5e1; padding: 0.6rem 0.75rem; border-radius: 8px; transition: background 150ms ease, color 150ms ease, border 150ms ease; }
+.guild-list button:hover { background: #162034; }
+.guild-list button.active { background: #1f2937; color: #fff; border-color: #243447; }
